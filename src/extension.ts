@@ -7,7 +7,15 @@ export function activate(context: vscode.ExtensionContext) {
   const reg = vscode.window.registerCustomEditorProvider(
     "karaca.mdEditor",
     provider,
-    { webviewOptions: { retainContextWhenHidden: true }, supportsMultipleEditorsPerDocument: false }
+    {
+      // NOT: retainContextWhenHidden kapalı tutuluyor. Açıkken sekme kapatılıp
+      // aynı pencerede yeniden açılınca VS Code'un service worker kaydı
+      // "InvalidStateError: document is in an invalid state" ile patlıyor.
+      // State zaten TextDocument üzerinden senkron (ready/update/edit), bu
+      // yüzden JS context'ini arka planda tutmaya gerek yok.
+      webviewOptions: { retainContextWhenHidden: false },
+      supportsMultipleEditorsPerDocument: false,
+    }
   );
 
   context.subscriptions.push(
