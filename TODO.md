@@ -13,7 +13,7 @@ V1 tamamlandı: Kaynak / Canlı / Okuma modları, tıklanabilir görev kutuları
 
 ## İçerik desteği
 
-- [ ] Göreli görsellerin webview-uri ile çözümlenmesi (`![a](./img.png)`)
+- [x] Göreli görsellerin webview-uri ile çözümlenmesi (md klasörü kök kabul edilir)
 - [ ] Matematik desteği (KaTeX, `$...$` / `$$...$$`)
 - [ ] Mermaid diyagramları (```mermaid blokları)
 - [ ] İçindekiler / başlık haritası (outline) paneli

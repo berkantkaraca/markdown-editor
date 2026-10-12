@@ -1,6 +1,8 @@
 import MarkdownIt from "markdown-it";
 import taskLists from "markdown-it-task-lists";
 import hljs from "highlight.js";
+import hljsDarkTheme from "highlight.js/styles/vs2015.css";
+import hljsLightTheme from "highlight.js/styles/vs.css";
 import { EditorState, Compartment } from "@codemirror/state";
 import { EditorView, keymap, highlightActiveLine, lineNumbers } from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
@@ -181,6 +183,17 @@ function initCodeMirror() {
       highlightActiveLine(),
       keymap.of([...defaultKeymap, ...historyKeymap]),
       markdown(),
+      EditorView.domEventHandlers({
+        paste: (event, view) => {
+          const f = getImageFromClipboard(event);
+          if (!f) {
+            return false;
+          }
+          event.preventDefault();
+          readAndSendImage(f, view.state.selection.main.head);
+          return true;
+        },
+      }),
       languageCompartment.of(wordWrap ? EditorView.lineWrapping : []),
       ...(Array.isArray(themeExt) ? themeExt : [themeExt]),
       EditorView.updateListener.of((u) => {
@@ -251,12 +264,22 @@ function buildEditBox(b: Block, index: number): HTMLElement {
   wrapper.className = "block editing";
   wrapper.dataset.index = String(index);
   const ta = document.createElement("textarea");
-  ta.value = b.source;
+  // Sondaki boş satırları kırp ki imleç yeni satıra düşmesin, satır sonunda kalsın
+  ta.value = b.source.replace(/\n+$/, "");
   ta.rows = Math.max(2, b.source.split("\n").length);
   ta.setAttribute("aria-label", "Blok düzenle");
   ta.addEventListener("input", () => {
     autoGrow(ta);
     replaceBlockSource(index, ta.value);
+  });
+  ta.addEventListener("paste", (e) => {
+    const f = getImageFromClipboard(e);
+    if (!f) {
+      return; // normal metin yapıştırma devam etsin
+    }
+    e.preventDefault();
+    const inner = ta.selectionStart ?? ta.value.length;
+    readAndSendImage(f, docOffsetForBlock(index, inner));
   });
   ta.addEventListener("keydown", (e) => {
     if (e.key === "Escape") {
@@ -443,15 +466,71 @@ function toggleTaskInFullText(checked: boolean, el: HTMLInputElement) {
 
 // ---------- Görseller ----------
 function postProcessImages(root: HTMLElement) {
-  // http/data zaten çalışır; göreli yollar için başlık ekle (V2'de webview-uri çözümleme gelecek)
+  const missing: string[] = [];
   root.querySelectorAll("img").forEach((img) => {
     const src = img.getAttribute("src") || "";
-    if (/^(https?:|data:|blob:|vscode-)/i.test(src) || src.startsWith("#")) {
+    if (/^(https?:|data:|blob:|vscode-)/i.test(src) || src.startsWith("#") || src === "") {
       return;
     }
-    img.title = `Göreli görsel: ${src} (aynı klasörde olmalı)`;
+    const hit = imgUriCache.get(src);
+    if (hit) {
+      img.setAttribute("src", hit);
+      img.title = "";
+      return;
+    }
+    img.title = `Göreli görsel: ${src}`;
     img.alt = img.alt || src;
+    if (!missing.includes(src)) {
+      missing.push(src);
+    }
   });
+  if (missing.length > 0) {
+    vscode.postMessage({ type: "resolve-imgs", paths: missing });
+  }
+}
+
+// ---------- Panodan görsel yapıştırma + göreli görsel çözümleme ----------
+let pendingPaste = false;
+const imgUriCache = new Map<string, string>();
+
+function getImageFromClipboard(e: ClipboardEvent): File | null {
+  const items = e.clipboardData?.items;
+  if (!items) {
+    return null;
+  }
+  for (const it of Array.from(items)) {
+    if (it.type.startsWith("image/")) {
+      const f = it.getAsFile();
+      if (f) {
+        return f;
+      }
+    }
+  }
+  return null;
+}
+
+function readAndSendImage(file: File, cursor: number) {
+  if (file.size > 15 * 1024 * 1024) {
+    vscode.postMessage({ type: "error", message: "Görsel 15 MB'tan büyük, yapıştırılamadı." });
+    return;
+  }
+  const r = new FileReader();
+  r.onload = () => {
+    pendingPaste = true;
+    vscode.postMessage({ type: "paste-image", dataUrl: String(r.result || ""), cursor });
+  };
+  r.onerror = () => vscode.postMessage({ type: "error", message: "Görsel okunamadı." });
+  r.readAsDataURL(file);
+}
+
+// Blok-içi offset'i doküman offset'ine çevir
+function docOffsetForBlock(index: number, inner: number): number {
+  const b = blocks[index];
+  if (!b) {
+    return inner;
+  }
+  const head = currentText.split("\n").slice(0, b.startLine).join("\n");
+  return head.length + (b.startLine > 0 ? 1 : 0) + inner;
 }
 
 // ---------- Biçim çubuğu + geri al/yinele ----------
@@ -833,6 +912,20 @@ fmtButtons.forEach((b) => {
   });
 });
 
+// ---------- Kod teması (highlight.js renkleri) ----------
+let hljsStyleEl: HTMLStyleElement | null = null;
+function applyHljsTheme() {
+  const css = isDarkTheme() ? hljsDarkTheme : hljsLightTheme;
+  if (!hljsStyleEl) {
+    hljsStyleEl = document.createElement("style");
+    hljsStyleEl.id = "hljs-theme";
+    document.head.appendChild(hljsStyleEl);
+  }
+  if (hljsStyleEl.textContent !== css) {
+    hljsStyleEl.textContent = css;
+  }
+}
+
 // ---------- Mod yönetimi ----------
 function setMode(m: Mode) {
   if (editingIndex !== null && m !== "live") {
@@ -877,6 +970,7 @@ document.addEventListener("keydown", (e) => {
 // Tema değişimini izle (CodeMirror koyu/açık)
 new MutationObserver(
   debounce(() => {
+    applyHljsTheme();
     if (!cmView) {
       return;
     }
@@ -896,6 +990,11 @@ window.addEventListener("message", (event) => {
       if (text === currentText) {
         updateWordCount();
         break;
+      }
+      if (pendingPaste) {
+        // Yapıştırılan görsel dokümana işlendi: edit kutusunu kapatıp yeniden renderla
+        pendingPaste = false;
+        editingIndex = null;
       }
       const wasEditing = editingIndex !== null;
       currentText = text;
@@ -926,6 +1025,28 @@ window.addEventListener("message", (event) => {
       }
       break;
     }
+    case "img-uris": {
+      const map = (msg.map ?? {}) as Record<string, string>;
+      let changed = false;
+      for (const k of Object.keys(map)) {
+        if (imgUriCache.get(k) !== map[k]) {
+          imgUriCache.set(k, map[k]);
+          changed = true;
+        }
+      }
+      if (changed) {
+        document.querySelectorAll("#live-root img, #reading-root img").forEach((node) => {
+          const el = node as HTMLImageElement;
+          const src = el.getAttribute("src") || "";
+          const hit = imgUriCache.get(src);
+          if (hit && el.src !== hit) {
+            el.src = hit;
+            el.title = "";
+          }
+        });
+      }
+      break;
+    }
     case "config": {
       const def = (msg.defaultMode as Mode) || "live";
       wordWrap = msg.wordWrap !== false;
@@ -944,6 +1065,7 @@ window.addEventListener("message", (event) => {
   mode = saved || "live";
   currentText = "";
   initCodeMirror();
+  applyHljsTheme();
   setMode(mode);
   updateWordCount();
   vscode.postMessage({ type: "ready" });

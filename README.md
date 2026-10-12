@@ -14,7 +14,9 @@ Ekstralar:
 - Görev listeleri (`- [ ]`) hem Canlı hem Okuma modunda **tıklanabilir** — dosyaya geri yazılır.
 - `[[WikiLink]]` desteği: tıkla → aynı klasörde / workspace'te ara, yoksa oluşturmayı teklif et.
 - Göreli dosya linkleri (ör. `y.md` dosyasına verilen bağlantı) aynı şekilde açılır/oluşturulur.
-- Kod vurgulama (highlight.js), GFM tabloları, kelime sayacı.
+- Kod blokları VS Code temasına uygun renkli vurgulanır (koyu/açık otomatik).
+- Panodan görsel yapıştırma (`Ctrl+V`): md dosyasının yanındaki `assets/` klasörüne kaydedilir, imlece `![](...)` eklenir.
+- Göreli görseller (`assets/x.png` gibi) önizlemede doğrudan gösterilir.
 - Üstteki biçim çubuğu (Kaynak ve Canlı modda): geri al/yinele, kalın/italik/üstü çizili/başlık, liste/alıntı/kod, tablo/bağlantı/görsel ekleme.
 
 ## Çalıştırma (geliştirme)
@@ -37,6 +39,6 @@ npm run compile
 
 ## Bilinen sınırlamalar (V2 yol haritası)
 
-- Göreli görseller (`![a](./img.png)`) V1'de başlık/ipucu olarak görünür; webview-uri çözümleme V2'de.
+- Göreli görseller md klasörünün dışına (`../` ile üst klasöre) taşarsa gösterilmez.
 - Matematik (KaTeX) ve Mermaid diyagramları henüz yok.
 - CodeMirror teması statik (açılıştaki temaya göre); dinamik tema takibi V2'de.

@@ -66,6 +66,8 @@ class KaracaMarkdownProvider implements vscode.CustomTextEditorProvider {
       localResourceRoots: [
         vscode.Uri.file(path.join(this.context.extensionPath, "media")),
         vscode.Uri.file(path.join(this.context.extensionPath, "dist")),
+        // Göreli görseller için md dosyasının klasörü
+        vscode.Uri.file(path.dirname(document.uri.fsPath)),
       ],
     };
 
@@ -136,6 +138,14 @@ class KaracaMarkdownProvider implements vscode.CustomTextEditorProvider {
         case "open-wikilink": {
           const name: string = msg.name ?? "";
           await this.handleWikilink(document, name);
+          break;
+        }
+        case "paste-image": {
+          await this.handlePasteImage(document, msg);
+          break;
+        }
+        case "resolve-imgs": {
+          await this.handleResolveImgs(document, webviewPanel, msg.paths);
           break;
         }
         case "error": {
@@ -215,6 +225,95 @@ class KaracaMarkdownProvider implements vscode.CustomTextEditorProvider {
     }
   }
 
+  private async handlePasteImage(document: vscode.TextDocument, msg: any) {
+    try {
+      const dataUrl: string = msg.dataUrl ?? "";
+      const m = dataUrl.match(/^data:(image\/[a-zA-Z0-9+.-]+);base64,(.+)$/);
+      if (!m) {
+        return;
+      }
+      const mime = m[1].toLowerCase();
+      const ext = mimeToExt(mime);
+      if (!ext) {
+        vscode.window.showWarningMessage(`Desteklenmeyen görsel türü: ${mime}`);
+        return;
+      }
+      const buf = Buffer.from(m[2], "base64");
+      if (buf.length > 15 * 1024 * 1024) {
+        vscode.window.showWarningMessage("Görsel 15 MB'tan büyük, yapıştırılamadı.");
+        return;
+      }
+      const docDir = path.dirname(document.uri.fsPath);
+      const assetsDir = vscode.Uri.file(path.join(docDir, "assets"));
+      await vscode.workspace.fs.createDirectory(assetsDir);
+      const stamp = new Date().toISOString().replace(/[^0-9]/g, "").slice(0, 14);
+      let name = `yapistirilan-${stamp}.${ext}`;
+      let target = vscode.Uri.file(path.join(assetsDir.fsPath, name));
+      let i = 1;
+      while (await this.existsUri(target)) {
+        name = `yapistirilan-${stamp}-${i}.${ext}`;
+        target = vscode.Uri.file(path.join(assetsDir.fsPath, name));
+        i++;
+      }
+      await vscode.workspace.fs.writeFile(target, buf);
+      const rel = path.relative(docDir, target.fsPath).split(path.sep).join("/");
+      const full = document.getText();
+      const cursor = Math.max(0, Math.min(Number(msg.cursor) || 0, full.length));
+      const snippet = `![görsel](${rel})`;
+      const next = full.slice(0, cursor) + snippet + full.slice(cursor);
+      const edit = new vscode.WorkspaceEdit();
+      edit.replace(
+        document.uri,
+        new vscode.Range(document.positionAt(0), document.positionAt(full.length)),
+        next
+      );
+      await vscode.workspace.applyEdit(edit);
+    } catch (err: any) {
+      vscode.window.showErrorMessage(`Görsel yapıştırılamadı: ${err?.message ?? err}`);
+    }
+  }
+
+  private async handleResolveImgs(
+    document: vscode.TextDocument,
+    webviewPanel: vscode.WebviewPanel,
+    paths: unknown
+  ) {
+    const map: Record<string, string> = {};
+    if (!Array.isArray(paths)) {
+      return;
+    }
+    const baseDir = path.dirname(document.uri.fsPath);
+    for (const raw of paths.slice(0, 50)) {
+      if (typeof raw !== "string") {
+        continue;
+      }
+      if (/^(https?:|data:|blob:|vscode-|#)/i.test(raw) || raw.trim() === "") {
+        continue;
+      }
+      try {
+        const clean = decodeURIComponent(raw.split("#")[0].split("?")[0]);
+        if (!clean) {
+          continue;
+        }
+        const uri = vscode.Uri.file(path.resolve(baseDir, clean));
+        await vscode.workspace.fs.stat(uri);
+        map[raw] = webviewPanel.webview.asWebviewUri(uri).toString();
+      } catch {
+        // dosya yoksa eşleme dışı bırak
+      }
+    }
+    webviewPanel.webview.postMessage({ type: "img-uris", map });
+  }
+
+  private async existsUri(uri: vscode.Uri): Promise<boolean> {
+    try {
+      await vscode.workspace.fs.stat(uri);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   private getHtml(webview: vscode.Webview): string {
     const scriptUri = webview.asWebviewUri(
       vscode.Uri.file(path.join(this.context.extensionPath, "media", "webview.js"))
@@ -271,6 +370,25 @@ window.__karacaInitialMode = "live";
 <script nonce="${nonce}" src="${scriptUri}"></script>
 </body>
 </html>`;
+  }
+}
+
+function mimeToExt(mime: string): string | undefined {
+  switch (mime) {
+    case "image/png":
+      return "png";
+    case "image/jpeg":
+      return "jpg";
+    case "image/gif":
+      return "gif";
+    case "image/webp":
+      return "webp";
+    case "image/bmp":
+      return "bmp";
+    case "image/svg+xml":
+      return "svg";
+    default:
+      return undefined;
   }
 }
 
