@@ -22,7 +22,7 @@
     "customEditors": [
       {
         "viewType": "karaca.mdEditor",
-        "displayName": "Karaca MD Editor",
+        "displayName": "Karaca MD",
         "selector": [{ "filenamePattern": "*.md" }],
         "priority": "default"
       }
@@ -43,13 +43,6 @@
       "commandPalette": [
         { "command": "karaca-md.openLive", "when": "resourceLangId == markdown" },
         { "command": "karaca-md.showSource", "when": "resourceLangId == markdown" }
-      ],
-      "editor/title": [
-        {
-          "command": "karaca-md.showSource",
-          "when": "activeCustomEditorId == karaca.mdEditor",
-          "group": "navigation"
-        }
       ]
     },
     "configuration": {
