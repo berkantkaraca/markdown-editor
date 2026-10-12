@@ -1,6 +1,6 @@
 {
   "name": "karaca-md-editor",
-  "displayName": "Karaca MD Editor",
+  "displayName": "Karaca MD",
   "description": "Tek dosyada markdown düzenleme + görüntüleme: Kaynak / Canlı / Okuma modları. Split preview derdine son.",
   "version": "0.1.0",
   "publisher": "vibecode",
@@ -22,7 +22,7 @@
     "customEditors": [
       {
         "viewType": "karaca.mdEditor",
-        "displayName": "Karaca MD",
+        "displayName": "Karaca MD Editor",
         "selector": [{ "filenamePattern": "*.md" }],
         "priority": "default"
       }

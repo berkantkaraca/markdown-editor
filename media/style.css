@@ -113,3 +113,32 @@ body {
 
 /* Kaynak satır vurgusu */
 .cm-activeLine { background: var(--md-hover) !important; }
+
+/* Biçim çubuğu */
+#formatbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--md-border);
+  background: var(--vscode-editor-background);
+  user-select: none;
+}
+#formatbar button {
+  border: 1px solid transparent;
+  background: transparent;
+  color: inherit;
+  min-width: 28px;
+  height: 26px;
+  padding: 0 6px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+}
+#formatbar button:hover:not(:disabled) { background: var(--md-hover); border-color: var(--md-border); }
+#formatbar button:disabled { opacity: .35; cursor: default; }
+#formatbar .fsep { width: 1px; height: 18px; background: var(--md-border); margin: 0 4px; }
+/* Blok edit kutusu küçük açılmasın: en az ~3 satır boy */
+.block.editing textarea { min-height: calc(3 * 1.6em + 22px); }

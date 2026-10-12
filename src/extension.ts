@@ -243,6 +243,25 @@ class KaracaMarkdownProvider implements vscode.CustomTextEditorProvider {
   <span id="wordcount" title="Kelime / karakter sayısı"></span>
   <span id="dirty" title="Kaydedilmemiş değişiklik"></span>
 </div>
+<div id="formatbar" class="hidden">
+  <button type="button" data-cmd="undo" title="Geri al">↺</button>
+  <button type="button" data-cmd="redo" title="Yinele">↻</button>
+  <span class="fsep"></span>
+  <button type="button" data-cmd="bold" title="Kalın"><b>B</b></button>
+  <button type="button" data-cmd="italic" title="İtalik"><i>I</i></button>
+  <button type="button" data-cmd="strike" title="Üstü çizili"><s>S</s></button>
+  <button type="button" data-cmd="heading" title="Başlık">H</button>
+  <span class="fsep"></span>
+  <button type="button" data-cmd="bullet" title="Madde listesi">•</button>
+  <button type="button" data-cmd="numbered" title="Numaralı liste">1.</button>
+  <button type="button" data-cmd="task" title="Görev listesi">☐</button>
+  <button type="button" data-cmd="quote" title="Alıntı">❝</button>
+  <button type="button" data-cmd="code" title="Kod">‹›</button>
+  <span class="fsep"></span>
+  <button type="button" data-cmd="table" title="Tablo ekle">▦</button>
+  <button type="button" data-cmd="link" title="Bağlantı ekle">Link</button>
+  <button type="button" data-cmd="image" title="Görsel ekle">Görsel</button>
+</div>
 <div id="source-wrap" class="hidden"><div id="cm-host"></div></div>
 <div id="live-wrap" class="hidden"><div id="live-root" class="md-body"></div></div>
 <div id="reading-wrap" class="hidden"><div id="reading-root" class="md-body"></div><div id="back-to-live">Canlı düzenlemeye dönmek için çift tıklayın</div></div>

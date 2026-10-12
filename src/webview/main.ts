@@ -189,6 +189,7 @@ function initCodeMirror() {
           currentText = t;
           updateWordCount();
           sendEdit(t);
+          recordHist();
           // Canlı blokların kaynağını kirletmemek için render'ı ertele
           scheduleLiveRerender();
         }
@@ -242,6 +243,7 @@ function renderLive() {
     }
   });
   postProcessImages(liveRoot);
+  refreshBar();
 }
 
 function buildEditBox(b: Block, index: number): HTMLElement {
@@ -250,7 +252,8 @@ function buildEditBox(b: Block, index: number): HTMLElement {
   wrapper.dataset.index = String(index);
   const ta = document.createElement("textarea");
   ta.value = b.source;
-  ta.rows = Math.max(1, b.source.split("\n").length);
+  // Blok tek satırlık açılmasın: en az 3 satır + yazmak için 1 satır pay
+  ta.rows = Math.max(3, b.source.split("\n").length + 1);
   ta.setAttribute("aria-label", "Blok düzenle");
   autoGrow(ta);
   ta.addEventListener("input", () => {
@@ -287,7 +290,7 @@ function buildEditBox(b: Block, index: number): HTMLElement {
 
 function autoGrow(ta: HTMLTextAreaElement) {
   ta.style.height = "auto";
-  ta.style.height = ta.scrollHeight + "px";
+  ta.style.height = ta.scrollHeight + 6 + "px";
 }
 
 function replaceBlockSource(index: number, newSource: string) {
@@ -306,6 +309,7 @@ function replaceBlockSource(index: number, newSource: string) {
   // Satır numaraları kaydı — bir sonraki render'da recompute edilecek
   updateWordCount();
   sendEdit(next);
+  recordHist();
   syncCodeMirrorFromText();
 }
 
@@ -367,6 +371,7 @@ function toggleTaskCheckbox(blockIndex: number, checked: boolean) {
   if (next === b.source) {
     return;
   }
+  recordHist(true);
   replaceBlockSource(blockIndex, next);
   // Canlı görünümde checkbox durumunu anında yansıt (tam re-render gereksiz)
   b.source = next;
@@ -425,6 +430,7 @@ function toggleTaskInFullText(checked: boolean, el: HTMLInputElement) {
     }
     return m;
   });
+  recordHist(true);
   setTextFromWebview(next);
   syncCodeMirrorFromText();
 }
@@ -441,6 +447,383 @@ function postProcessImages(root: HTMLElement) {
     img.alt = img.alt || src;
   });
 }
+
+// ---------- Biçim çubuğu + geri al/yinele ----------
+const formatbar = $("formatbar");
+const fmtButtons = Array.from(formatbar.querySelectorAll("button[data-cmd]")) as HTMLButtonElement[];
+
+type Target = { kind: "cm" } | { kind: "ta"; el: HTMLTextAreaElement; index: number } | null;
+
+function getTarget(): Target {
+  if (mode === "source" && cmView) {
+    return { kind: "cm" };
+  }
+  if (mode === "live" && editingIndex !== null) {
+    const ta = liveRoot.querySelector("div.block.editing textarea") as HTMLTextAreaElement | null;
+    if (ta) {
+      return { kind: "ta", el: ta, index: editingIndex };
+    }
+  }
+  return null;
+}
+
+// Snapshot tabanlı geri al/yinele (Kaynak ve Canlı modda ortak çalışır)
+const hist: string[] = [];
+let hi = -1;
+let lastRecTime = 0;
+function recordHist(force = false) {
+  const now = Date.now();
+  if (hist[hi] === currentText) {
+    return;
+  }
+  if (!force && now - lastRecTime < 2500 && hi >= 0) {
+    return;
+  }
+  lastRecTime = now;
+  hist.length = hi + 1;
+  hist.push(currentText);
+  if (hist.length > 100) {
+    hist.shift();
+  }
+  hi = hist.length - 1;
+  refreshBar();
+}
+function applyHistText(t: string) {
+  currentText = t;
+  updateWordCount();
+  vscode.postMessage({ type: "edit", text: t });
+  editingIndex = null;
+  syncCodeMirrorFromText();
+  if (mode === "live") {
+    renderLive();
+  } else if (mode === "reading") {
+    renderReading();
+  }
+  refreshBar();
+}
+function doUndo() {
+  if (hi < 0) {
+    return;
+  }
+  if (currentText !== hist[hi]) {
+    // Henüz kaydedilmemiş yazım: anlık durumu kaydet, sonra geri git
+    hist.length = hi + 1;
+    hist.push(currentText);
+    hi = hist.length - 1;
+  }
+  if (hi > 0) {
+    hi--;
+    applyHistText(hist[hi]);
+  } else {
+    refreshBar();
+  }
+}
+function doRedo() {
+  if (hi < hist.length - 1) {
+    hi++;
+    applyHistText(hist[hi]);
+  }
+}
+
+function cmWrap(before: string, after: string, placeholder: string) {
+  if (!cmView) {
+    return;
+  }
+  const r = cmView.state.selection.main;
+  const sel = cmView.state.doc.sliceString(r.from, r.to) || placeholder;
+  recordHist(true);
+  cmView.dispatch({
+    changes: { from: r.from, to: r.to, insert: before + sel + after },
+    selection: { anchor: r.from + before.length, head: r.from + before.length + sel.length },
+  });
+  cmView.focus();
+}
+
+function cmEachLine(fn: (text: string) => string | null) {
+  if (!cmView) {
+    return;
+  }
+  const doc = cmView.state.doc;
+  const r = cmView.state.selection.main;
+  const l1 = doc.lineAt(r.from).number;
+  const l2 = doc.lineAt(r.to).number;
+  const changes: { from: number; to: number; insert: string }[] = [];
+  for (let n = l1; n <= l2; n++) {
+    const line = doc.line(n);
+    const nt = fn(line.text);
+    if (nt !== null && nt !== line.text) {
+      changes.push({ from: line.from, to: line.to, insert: nt });
+    }
+  }
+  if (changes.length === 0) {
+    cmView.focus();
+    return;
+  }
+  recordHist(true);
+  cmView.dispatch({ changes });
+  cmView.focus();
+}
+
+function cmInsert(text: string, selAnchor?: number, selHead?: number) {
+  if (!cmView) {
+    return;
+  }
+  const r = cmView.state.selection.main;
+  recordHist(true);
+  cmView.dispatch({
+    changes: { from: r.from, to: r.to, insert: text },
+    selection:
+      selAnchor !== undefined
+        ? { anchor: r.from + selAnchor, head: r.from + (selHead ?? selAnchor) }
+        : undefined,
+  });
+  cmView.focus();
+}
+
+const togglePrefix =
+  (p: string) =>
+  (t: string): string | null => {
+    if (t.trim() === "") {
+      return null;
+    }
+    return t.startsWith(p) ? t.slice(p.length) : p + t;
+  };
+
+function toggleTaskLine(t: string): string | null {
+  if (t.trim() === "") {
+    return null;
+  }
+  const m = t.match(/^(\s*)(- \[[ xX]\] |- )(.*)$/);
+  if (!m) {
+    return `- [ ] ${t}`;
+  }
+  if (m[2] === "- ") {
+    return `${m[1]}- [ ] ${m[3]}`;
+  }
+  return `${m[1]}- ${m[3]}`;
+}
+
+function toggleHeadingLine(t: string): string | null {
+  if (t.trim() === "") {
+    return null;
+  }
+  const m = t.match(/^(#{1,6}\s+)/);
+  if (m) {
+    return t.slice(m[0].length);
+  }
+  return `## ${t}`;
+}
+
+function taWrap(before: string, after: string, placeholder: string) {
+  const t = getTarget();
+  if (!t || t.kind !== "ta") {
+    return;
+  }
+  const el = t.el;
+  const s = el.selectionStart ?? 0;
+  const e = el.selectionEnd ?? 0;
+  const sel = el.value.slice(s, e) || placeholder;
+  recordHist(true);
+  el.setRangeText(before + sel + after, s, e, "end");
+  el.selectionStart = s + before.length;
+  el.selectionEnd = s + before.length + sel.length;
+  el.focus();
+  autoGrow(el);
+  replaceBlockSource(t.index, el.value);
+}
+
+function taEachLine(fn: (text: string) => string | null) {
+  const t = getTarget();
+  if (!t || t.kind !== "ta") {
+    return;
+  }
+  const el = t.el;
+  const s = el.selectionStart ?? 0;
+  const e = el.selectionEnd ?? 0;
+  const v = el.value;
+  const ls = v.slice(0, s).split("\n").length - 1;
+  const le = v.slice(0, e).split("\n").length - 1;
+  const arr = v.split("\n");
+  let changed = false;
+  for (let i = ls; i <= le; i++) {
+    const nt = fn(arr[i]);
+    if (nt !== null && nt !== arr[i]) {
+      arr[i] = nt;
+      changed = true;
+    }
+  }
+  if (!changed) {
+    el.focus();
+    return;
+  }
+  recordHist(true);
+  el.value = arr.join("\n");
+  el.focus();
+  autoGrow(el);
+  replaceBlockSource(t.index, el.value);
+}
+
+function taInsert(text: string, selAnchor?: number, selHead?: number) {
+  const t = getTarget();
+  if (!t || t.kind !== "ta") {
+    return;
+  }
+  const el = t.el;
+  const s = el.selectionStart ?? el.value.length;
+  const e = el.selectionEnd ?? s;
+  recordHist(true);
+  el.setRangeText(text, s, e, "end");
+  if (selAnchor !== undefined) {
+    el.selectionStart = s + selAnchor;
+    el.selectionEnd = s + (selHead ?? selAnchor);
+  }
+  el.focus();
+  autoGrow(el);
+  replaceBlockSource(t.index, el.value);
+}
+
+function selText(): string {
+  const t = getTarget();
+  if (!t) {
+    return "";
+  }
+  if (t.kind === "cm") {
+    if (!cmView) {
+      return "";
+    }
+    const r = cmView.state.selection.main;
+    return cmView.state.doc.sliceString(r.from, r.to);
+  }
+  const s = t.el.selectionStart ?? 0;
+  const e = t.el.selectionEnd ?? 0;
+  return t.el.value.slice(s, e);
+}
+
+function wrapSel(before: string, after: string, ph: string) {
+  const t = getTarget();
+  if (!t) {
+    return;
+  }
+  if (t.kind === "cm") {
+    cmWrap(before, after, ph);
+  } else {
+    taWrap(before, after, ph);
+  }
+}
+
+function eachLineSel(fn: (text: string) => string | null) {
+  const t = getTarget();
+  if (!t) {
+    return;
+  }
+  if (t.kind === "cm") {
+    cmEachLine(fn);
+  } else {
+    taEachLine(fn);
+  }
+}
+
+function insertAtCursor(text: string, selAnchor?: number, selHead?: number) {
+  const t = getTarget();
+  if (!t) {
+    return;
+  }
+  if (t.kind === "cm") {
+    cmInsert(text, selAnchor, selHead);
+  } else {
+    taInsert(text, selAnchor, selHead);
+  }
+}
+
+const TABLE_TEMPLATE = "\n| Başlık 1 | Başlık 2 |\n| --- | --- |\n|  |  |\n";
+
+function runFormat(cmd: string) {
+  if (cmd === "undo") {
+    doUndo();
+    return;
+  }
+  if (cmd === "redo") {
+    doRedo();
+    return;
+  }
+  if (!getTarget()) {
+    return;
+  }
+  switch (cmd) {
+    case "bold":
+      wrapSel("**", "**", "metin");
+      break;
+    case "italic":
+      wrapSel("*", "*", "metin");
+      break;
+    case "strike":
+      wrapSel("~~", "~~", "metin");
+      break;
+    case "heading":
+      eachLineSel(toggleHeadingLine);
+      break;
+    case "bullet":
+      eachLineSel(togglePrefix("- "));
+      break;
+    case "numbered":
+      eachLineSel(togglePrefix("1. "));
+      break;
+    case "task":
+      eachLineSel(toggleTaskLine);
+      break;
+    case "quote":
+      eachLineSel(togglePrefix("> "));
+      break;
+    case "code":
+      if (selText().includes("\n")) {
+        wrapSel("```\n", "\n```", "kod");
+      } else {
+        wrapSel("`", "`", "kod");
+      }
+      break;
+    case "table":
+      insertAtCursor(TABLE_TEMPLATE);
+      break;
+    case "link": {
+      const label = selText() || "metin";
+      const urlStart = label.length + 3;
+      insertAtCursor(`[${label}](https://)`, urlStart, urlStart + 8);
+      break;
+    }
+    case "image":
+      insertAtCursor("![açıklama](görsel.png)", 2, 10);
+      break;
+  }
+  refreshBar();
+}
+
+function refreshBar() {
+  const show = mode !== "reading";
+  formatbar.classList.toggle("hidden", !show);
+  if (!show) {
+    return;
+  }
+  const t = getTarget();
+  const canUndo = hi > 0 || (hi >= 0 && currentText !== hist[hi]);
+  const canRedo = hi < hist.length - 1;
+  for (const b of fmtButtons) {
+    const cmd = b.dataset.cmd || "";
+    if (cmd === "undo") {
+      b.disabled = !canUndo;
+    } else if (cmd === "redo") {
+      b.disabled = !canRedo;
+    } else {
+      b.disabled = t === null;
+    }
+  }
+}
+
+fmtButtons.forEach((b) => {
+  b.addEventListener("click", (e) => {
+    e.preventDefault();
+    runFormat(b.dataset.cmd || "");
+  });
+});
 
 // ---------- Mod yönetimi ----------
 function setMode(m: Mode) {
@@ -467,6 +850,7 @@ function setMode(m: Mode) {
   } else {
     renderReading();
   }
+  refreshBar();
 }
 
 btnSource.addEventListener("click", () => setMode("source"));
@@ -507,6 +891,11 @@ window.addEventListener("message", (event) => {
       }
       const wasEditing = editingIndex !== null;
       currentText = text;
+      // Geri-al zincirinin başlangıç noktası
+      if (hist.length === 0) {
+        hist.push(text);
+        hi = 0;
+      }
       updateWordCount();
       if (!cmView) {
         initCodeMirror();
