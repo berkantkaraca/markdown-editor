@@ -252,10 +252,8 @@ function buildEditBox(b: Block, index: number): HTMLElement {
   wrapper.dataset.index = String(index);
   const ta = document.createElement("textarea");
   ta.value = b.source;
-  // Blok tek satırlık açılmasın: en az 3 satır + yazmak için 1 satır pay
-  ta.rows = Math.max(3, b.source.split("\n").length + 1);
+  ta.rows = Math.max(2, b.source.split("\n").length);
   ta.setAttribute("aria-label", "Blok düzenle");
-  autoGrow(ta);
   ta.addEventListener("input", () => {
     autoGrow(ta);
     replaceBlockSource(index, ta.value);
@@ -272,7 +270,12 @@ function buildEditBox(b: Block, index: number): HTMLElement {
     }
     e.stopPropagation();
   });
-  ta.addEventListener("blur", () => {
+  ta.addEventListener("blur", (e) => {
+    // Biçim düğmesine geçildiyse edit açık kalsın (komut hedefsiz kalmasın)
+    const to = (e.relatedTarget as HTMLElement | null) || null;
+    if (to && to.closest && to.closest("#formatbar")) {
+      return;
+    }
     // checkbox/link tıklamasına izin vermek için microtask ertele
     setTimeout(() => {
       if (editingIndex === index) {
@@ -282,8 +285,11 @@ function buildEditBox(b: Block, index: number): HTMLElement {
   });
   wrapper.appendChild(ta);
   requestAnimationFrame(() => {
+    // Ölçüm DOM'a eklendikten sonra yapılmalı, yoksa yükseklik yanlış çıkar
+    autoGrow(ta);
     ta.focus();
     ta.setSelectionRange(ta.value.length, ta.value.length);
+    wrapper.scrollIntoView({ block: "nearest" });
   });
   return wrapper;
 }
@@ -819,6 +825,8 @@ function refreshBar() {
 }
 
 fmtButtons.forEach((b) => {
+  // mousedown'da odağı çalma: canlı blok editi kapanmasın, komut hedefsiz kalmasın
+  b.addEventListener("mousedown", (e) => e.preventDefault());
   b.addEventListener("click", (e) => {
     e.preventDefault();
     runFormat(b.dataset.cmd || "");

@@ -140,5 +140,5 @@ body {
 #formatbar button:hover:not(:disabled) { background: var(--md-hover); border-color: var(--md-border); }
 #formatbar button:disabled { opacity: .35; cursor: default; }
 #formatbar .fsep { width: 1px; height: 18px; background: var(--md-border); margin: 0 4px; }
-/* Blok edit kutusu küçük açılmasın: en az ~3 satır boy */
-.block.editing textarea { min-height: calc(3 * 1.6em + 22px); }
+/* Blok edit kutusu küçük açılmasın */
+.block.editing textarea { min-height: calc(2 * 1.6em + 20px); }
