@@ -1,0 +1,98 @@
+{
+  "name": "karaca-md-editor",
+  "displayName": "Karaca MD Editor",
+  "description": "Tek dosyada markdown düzenleme + görüntüleme: Kaynak / Canlı / Okuma modları. Split preview derdine son.",
+  "version": "0.1.0",
+  "publisher": "vibecode",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/vibecode/markdown-editor"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": ["Other"],
+  "activationEvents": [
+    "onLanguage:markdown",
+    "onCustomEditor:karaca.mdEditor"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "customEditors": [
+      {
+        "viewType": "karaca.mdEditor",
+        "displayName": "Karaca MD Editor",
+        "selector": [{ "filenamePattern": "*.md" }],
+        "priority": "default"
+      }
+    ],
+    "commands": [
+      {
+        "command": "karaca-md.openLive",
+        "title": "Karaca MD: Canlı Editörde Aç",
+        "category": "Karaca"
+      },
+      {
+        "command": "karaca-md.showSource",
+        "title": "Karaca MD: Varsayılan Metin Editörüyle Aç",
+        "category": "Karaca"
+      }
+    ],
+    "menus": {
+      "commandPalette": [
+        { "command": "karaca-md.openLive", "when": "resourceLangId == markdown" },
+        { "command": "karaca-md.showSource", "when": "resourceLangId == markdown" }
+      ],
+      "editor/title": [
+        {
+          "command": "karaca-md.showSource",
+          "when": "activeCustomEditorId == karaca.mdEditor",
+          "group": "navigation"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Karaca MD Editor",
+      "properties": {
+        "karacaMd.defaultMode": {
+          "type": "string",
+          "enum": ["live", "source", "reading"],
+          "default": "live",
+          "description": "Markdown dosyası açıldığında varsayılan mod."
+        },
+        "karacaMd.wordWrap": {
+          "type": "boolean",
+          "default": true,
+          "description": "Kaynak editörde satır kaydırma."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "node esbuild.js",
+    "watch": "node esbuild.js --watch",
+    "vscode:prepublish": "node esbuild.js --production",
+    "lint": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/markdown-it": "^14.1.2",
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "esbuild": "^0.25.12",
+    "typescript": "^5.4.5"
+  },
+  "dependencies": {
+    "@codemirror/autocomplete": "^6.18.2",
+    "@codemirror/commands": "^6.7.1",
+    "@codemirror/lang-markdown": "^6.2.5",
+    "@codemirror/language": "^6.10.2",
+    "@codemirror/search": "^6.5.6",
+    "@codemirror/state": "^6.4.1",
+    "@codemirror/theme-one-dark": "^6.1.2",
+    "@codemirror/view": "^6.33.0",
+    "highlight.js": "^11.9.0",
+    "markdown-it": "^14.1.0",
+    "markdown-it-task-lists": "^2.1.1"
+  }
+}

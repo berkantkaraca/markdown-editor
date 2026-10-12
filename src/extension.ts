@@ -1,0 +1,254 @@
+import * as vscode from "vscode";
+import * as path from "path";
+import * as crypto from "crypto";
+
+export function activate(context: vscode.ExtensionContext) {
+  const provider = new KaracaMarkdownProvider(context);
+  const reg = vscode.window.registerCustomEditorProvider(
+    "karaca.mdEditor",
+    provider,
+    { webviewOptions: { retainContextWhenHidden: true }, supportsMultipleEditorsPerDocument: false }
+  );
+
+  context.subscriptions.push(
+    reg,
+    vscode.commands.registerCommand("karaca-md.openLive", async () => {
+      const editor = vscode.window.activeTextEditor;
+      const target = editor?.document?.languageId === "markdown" ? editor.document.uri : undefined;
+      if (!target) {
+        vscode.window.showInformationMessage("Önce bir Markdown (.md) dosyası açın.");
+        return;
+      }
+      await vscode.commands.executeCommand("vscode.openWith", target, "karaca.mdEditor");
+    }),
+    vscode.commands.registerCommand("karaca-md.showSource", async () => {
+      const uri = getActiveCustomUri();
+      if (!uri) {
+        vscode.window.showInformationMessage("Aktif Karaca MD sekmesi bulunamadı.");
+        return;
+      }
+      await vscode.commands.executeCommand("vscode.openWith", uri, "default");
+    })
+  );
+}
+
+function getActiveCustomUri(): vscode.Uri | undefined {
+  const tabGroups = vscode.window.tabGroups.all;
+  for (const g of tabGroups) {
+    for (const t of g.tabs) {
+      const input = t.input as any;
+      if (input?.viewType === "karaca.mdEditor" && input?.uri) {
+        return input.uri as vscode.Uri;
+      }
+    }
+  }
+  return undefined;
+}
+
+class KaracaMarkdownProvider implements vscode.CustomTextEditorProvider {
+  constructor(private readonly context: vscode.ExtensionContext) {}
+
+  async resolveCustomTextEditor(
+    document: vscode.TextDocument,
+    webviewPanel: vscode.WebviewPanel,
+    _token: vscode.CancellationToken
+  ): Promise<void> {
+    webviewPanel.webview.options = {
+      enableScripts: true,
+      localResourceRoots: [
+        vscode.Uri.file(path.join(this.context.extensionPath, "media")),
+        vscode.Uri.file(path.join(this.context.extensionPath, "dist")),
+      ],
+    };
+
+    webviewPanel.webview.html = this.getHtml(webviewPanel.webview);
+
+    const updateWebview = () => {
+      webviewPanel.webview.postMessage({
+        type: "update",
+        text: document.getText(),
+        isDirty: document.isDirty,
+      });
+    };
+
+    const cfg = () => vscode.workspace.getConfiguration("karacaMd");
+    const postConfig = () => {
+      webviewPanel.webview.postMessage({
+        type: "config",
+        defaultMode: cfg().get<string>("defaultMode", "live"),
+        wordWrap: cfg().get<boolean>("wordWrap", true),
+      });
+    };
+
+    const changeSub = vscode.workspace.onDidChangeTextDocument((e) => {
+      if (e.document.uri.toString() === document.uri.toString()) {
+        updateWebview();
+      }
+    });
+    const configSub = vscode.workspace.onDidChangeConfiguration((e) => {
+      if (e.affectsConfiguration("karacaMd")) {
+        postConfig();
+      }
+    });
+
+    webviewPanel.onDidDispose(() => {
+      changeSub.dispose();
+      configSub.dispose();
+    });
+
+    // Webview'den gelen mesajlar
+    webviewPanel.webview.onDidReceiveMessage(async (msg) => {
+      switch (msg?.type) {
+        case "ready": {
+          postConfig();
+          updateWebview();
+          break;
+        }
+        case "edit": {
+          // Webview full-text gönderir. Döngüyü önlemek için aynılık kontrolü.
+          const newText: string = msg.text ?? "";
+          if (newText === document.getText()) {
+            break;
+          }
+          const fullRange = new vscode.Range(
+            document.positionAt(0),
+            document.positionAt(document.getText().length)
+          );
+          const edit = new vscode.WorkspaceEdit();
+          edit.replace(document.uri, fullRange, newText);
+          await vscode.workspace.applyEdit(edit);
+          break;
+        }
+        case "open-link": {
+          // Göreli dosya / başlık linkleri
+          const href: string = msg.href ?? "";
+          await this.handleLink(document, href);
+          break;
+        }
+        case "open-wikilink": {
+          const name: string = msg.name ?? "";
+          await this.handleWikilink(document, name);
+          break;
+        }
+        case "error": {
+          vscode.window.showErrorMessage(`Markdown editör: ${msg.message}`);
+          break;
+        }
+      }
+    });
+  }
+
+  private async handleLink(document: vscode.TextDocument, href: string) {
+    try {
+      if (/^https?:\/\//i.test(href) || href.startsWith("mailto:")) {
+        await vscode.env.openExternal(vscode.Uri.parse(href));
+        return;
+      }
+      if (href.startsWith("#")) {
+        // Aynı dosya içi başlık — varsayılan preview gibi davran: bilgi ver
+        return;
+      }
+      const cleaned = href.split("#")[0].split("?")[0];
+      if (!cleaned) {
+        return;
+      }
+      const baseDir = vscode.Uri.file(path.dirname(document.uri.fsPath));
+      const target = vscode.Uri.file(path.resolve(baseDir.fsPath, decodeURIComponent(cleaned)));
+      try {
+        await vscode.workspace.fs.stat(target);
+        await vscode.commands.executeCommand("vscode.openWith", target, "karaca.mdEditor");
+      } catch {
+        // Dosya yoksa oluşturmayı teklif et
+        const create = await vscode.window.showInformationMessage(
+          `"${cleaned}" bulunamadı. Oluşturulsun mu?`,
+          "Oluştur",
+          "Vazgeç"
+        );
+        if (create === "Oluştur") {
+          await vscode.workspace.fs.writeFile(target, Buffer.from(`# ${cleaned}\n`, "utf8"));
+          await vscode.commands.executeCommand("vscode.openWith", target, "karaca.mdEditor");
+        }
+      }
+    } catch (err: any) {
+      vscode.window.showErrorMessage(`Bağlantı açılamadı: ${err?.message ?? err}`);
+    }
+  }
+
+  private async handleWikilink(document: vscode.TextDocument, name: string) {
+    // [[Not Adı]] veya [[Not Adı|Görünen]] — wiki kısayolu
+    const raw = name.split("|")[0].trim();
+    if (!raw) {
+      return;
+    }
+    const fileName = raw.endsWith(".md") ? raw : `${raw}.md`;
+    // Önce aynı klasörde ara, sonra workspace'te ara
+    const baseDir = path.dirname(document.uri.fsPath);
+    const sameDir = vscode.Uri.file(path.resolve(baseDir, fileName));
+    try {
+      await vscode.workspace.fs.stat(sameDir);
+      await vscode.commands.executeCommand("vscode.openWith", sameDir, "karaca.mdEditor");
+      return;
+    } catch {
+      // devam et
+    }
+    const found = await vscode.workspace.findFiles(`**/${fileName}`, null, 5);
+    if (found.length > 0) {
+      await vscode.commands.executeCommand("vscode.openWith", found[0], "karaca.mdEditor");
+      return;
+    }
+    const create = await vscode.window.showInformationMessage(
+      `"${fileName}" bulunamadı. Oluşturulsun mu?`,
+      "Oluştur",
+      "Vazgeç"
+    );
+    if (create === "Oluştur") {
+      await vscode.workspace.fs.writeFile(sameDir, Buffer.from(`# ${raw}\n`, "utf8"));
+      await vscode.commands.executeCommand("vscode.openWith", sameDir, "karaca.mdEditor");
+    }
+  }
+
+  private getHtml(webview: vscode.Webview): string {
+    const scriptUri = webview.asWebviewUri(
+      vscode.Uri.file(path.join(this.context.extensionPath, "media", "webview.js"))
+    );
+    const styleUri = webview.asWebviewUri(
+      vscode.Uri.file(path.join(this.context.extensionPath, "media", "style.css"))
+    );
+    const nonce = getNonce();
+    return `<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} https: data: blob:; media-src ${webview.cspSource} https: data: blob:; style-src ${webview.cspSource} 'unsafe-inline' https:; font-src ${webview.cspSource} https: data:; script-src 'nonce-${nonce}';" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<link href="${styleUri}" rel="stylesheet" />
+<title>Karaca MD Editor</title>
+</head>
+<body>
+<div id="toolbar">
+  <div class="seg" role="tablist" aria-label="Mod">
+    <button id="btn-source" data-mode="source" title="Kaynak (ham markdown)">Kaynak</button>
+    <button id="btn-live" data-mode="live" title="Canlı önizleme">Canlı</button>
+    <button id="btn-reading" data-mode="reading" title="Okuma (salt okunur önizleme)">Okuma</button>
+  </div>
+  <div class="spacer"></div>
+  <span id="wordcount" title="Kelime / karakter sayısı"></span>
+  <span id="dirty" title="Kaydedilmemiş değişiklik"></span>
+</div>
+<div id="source-wrap" class="hidden"><div id="cm-host"></div></div>
+<div id="live-wrap" class="hidden"><div id="live-root" class="md-body"></div></div>
+<div id="reading-wrap" class="hidden"><div id="reading-root" class="md-body"></div><div id="back-to-live">Canlı düzenlemeye dönmek için çift tıklayın</div></div>
+<script nonce="${nonce}">
+window.__karacaInitialMode = "live";
+</script>
+<script nonce="${nonce}" src="${scriptUri}"></script>
+</body>
+</html>`;
+  }
+}
+
+function getNonce(): string {
+  return crypto.randomBytes(24).toString("base64");
+}
+
+export function deactivate() {}
