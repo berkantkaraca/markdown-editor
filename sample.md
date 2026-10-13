@@ -161,11 +161,6 @@ yhhhjkjkjhkjhkjkhkjhkjhjkhjkhdsfsfsdf sdsf sdfs
 #### Başlık denemesi 4 (H4)
 ##### Başlık Seviyesi 5 (H5)
 ###### Başlık Seviyesi 6 (H6)
-
----
-
-## Metin Biçimlendirme ve Vurgular
-
 *Bu metin italiktir* veya _bu metin italiktir_.  
 **Bu metin koyudur** veya __bu metin koyudur__.  
 ***Bu metin hem koyu hem italiktir***.  
@@ -176,38 +171,3 @@ H~2~O (Alt simge) ve X^2^ (Üst simge)
 
 
 
-
-### Sırasız Liste
-* Birinci öge
-  * Alt öge 1
-  * Alt öge 2
-* İkinci öge
-* Üçüncü öge
-
-### Sıralı Liste
-1. Birinci adım
-2. İkinci adım
-   1. Alt adım A
-   2. Alt adım B
-3. Üçüncü adım
-
-
-
-*Bu metin italiktir* veya _bu metin italiktir_.  
-**Bu metin koyudur** veya __bu metin koyudur__.  
-***Bu metin hem koyu hem italiktir***.  
-~~Bu metnin üzeri çizilidir.~~  
-==Bu metin fosforlu/vurguludur.==  
-H~2~O (Alt simge) ve X^2^ (Üst simge)
-
-
-
-
-*Bu metin italiktir* veya _bu metin italiktir_.  
-**Bu metin koyudur** veya __bu metin koyudur__.  
-***Bu metin hem koyu hem italiktir***.  
-~~Bu metnin üzeri çizilidir.~~  
-==Bu metin fosforlu/vurguludur.==  
-H~2~O (Alt simge) ve X^2^ (Üst simge)
-
----

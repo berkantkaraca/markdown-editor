@@ -126,7 +126,7 @@ body {
   background: var(--vscode-editor-background);
   user-select: none;
 }
-#formatbar button {
+#formatbar button[data-cmd] {
   border: 1px solid transparent;
   background: transparent;
   color: inherit;
@@ -138,8 +138,8 @@ body {
   font-size: 13px;
   line-height: 1;
 }
-#formatbar button:hover:not(:disabled) { background: var(--md-hover); border-color: var(--md-border); }
-#formatbar button:disabled { opacity: .35; cursor: default; }
+#formatbar button[data-cmd]:hover:not(:disabled) { background: var(--md-hover); border-color: var(--md-border); }
+#formatbar button[data-cmd]:disabled { opacity: .35; cursor: default; }
 #formatbar .fsep { width: 1px; height: 18px; background: var(--md-border); margin: 0 4px; }
 .block.flash { animation: mdflash 1.5s ease-out; }
 @keyframes mdflash {

@@ -37,8 +37,14 @@
     ],
     "views": {
       "explorer": [
-        { "id": "karacaOutline", "name": "Karaca İçindekiler" },
-        { "id": "karacaBacklinks", "name": "Karaca Geri Bağlantılar" }
+        {
+          "id": "karacaOutline",
+          "name": "Karaca İçindekiler"
+        },
+        {
+          "id": "karacaBacklinks",
+          "name": "Karaca Geri Bağlantılar"
+        }
       ]
     },
     "commands": [
@@ -73,8 +79,12 @@
           "command": "karaca-md.showSource",
           "when": "resourceLangId == markdown"
         },
-        { "command": "karaca-md.newNote" },
-        { "command": "karaca-md.dailyNote" }
+        {
+          "command": "karaca-md.newNote"
+        },
+        {
+          "command": "karaca-md.dailyNote"
+        }
       ]
     },
     "configuration": {
@@ -116,6 +126,7 @@
     "@types/node": "^20.11.0",
     "@types/vscode": "^1.85.0",
     "esbuild": "^0.25.12",
+    "jsdom": "^29.1.1",
     "typescript": "^5.4.5"
   },
   "dependencies": {

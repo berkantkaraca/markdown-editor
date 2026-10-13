@@ -403,7 +403,11 @@ function buildEditBox(b: Block, index: number): HTMLElement {
   ta.addEventListener("blur", (e) => {
     // Biçim düğmesine geçildiyse edit açık kalsın (komut hedefsiz kalmasın)
     const to = (e.relatedTarget as HTMLElement | null) || null;
-    if (to && to.closest && to.closest("#formatbar")) {
+    if (to && to.closest && (to.closest("#formatbar") || to.closest(".kmenu"))) {
+      return;
+    }
+    // Açılır menü açıkken (odak menüde) commit ertele — seçim 150 ms'de ölmesin
+    if (openMenuEl) {
       return;
     }
     // checkbox/link tıklamasına izin vermek için microtask ertele
@@ -827,6 +831,8 @@ function closeMenu() {
   openMenuEl?.remove();
   openMenuEl = null;
   document.removeEventListener("mousedown", menuOutside, true);
+  // NOT: burada commit YOK. İşlem (it.run) kapatmadan önce çalışır ve odağı
+  // editöre döndürür; menü dışı tıklamada blur zaten commit'i tetikler.
 }
 
 function menuOutside(e: MouseEvent) {
@@ -847,6 +853,12 @@ function openMenu(
   const menu = document.createElement("div");
   menu.className = "kmenu";
   menu.addEventListener("mousedown", (e) => e.preventDefault());
+  menu.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      closeMenu();
+    }
+  });
   for (const it of items) {
     const b = document.createElement("button");
     b.type = "button";
@@ -856,8 +868,9 @@ function openMenu(
     }
     b.addEventListener("click", (e) => {
       e.preventDefault();
-      closeMenu();
+      // Önce işlem (odak ve içerik yerindeyken), sonra kapat
       it.run();
+      closeMenu();
     });
     menu.appendChild(b);
   }
@@ -1242,18 +1255,12 @@ function runFormat(cmd: string) {
         wrapSel("`", "`", "kod");
       }
       break;
-    case "table":
-      insertAtCursor(TABLE_TEMPLATE);
-      break;
     case "link": {
       const label = selText() || "metin";
       const urlStart = label.length + 3;
       insertAtCursor(`[${label}](https://)`, urlStart, urlStart + 8);
       break;
     }
-    case "image":
-      insertAtCursor("![açıklama](görsel.png)", 2, 10);
-      break;
   }
   refreshBar();
 }
@@ -1370,6 +1377,8 @@ document.addEventListener("keydown", (e) => {
       }
       editingIndex = idx;
       renderLive();
+      // Bayat seçimi temizle: düğümler yıkıldı, ikinci Delete TA içinde çalışsın
+      sel.removeAllRanges();
     }
     return;
   }
