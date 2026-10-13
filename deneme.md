@@ -4,34 +4,9 @@
 
 Hi! I'm your first Markdown file in **StackEdit**. If you want to learn about StackEdit, you can read me. If you want to play with Markdown, you can edit me. Once you have finished with me, you can create new files by opening the **file explorer** on the left corner of the navigation bar.
 
-sdad
-sda
-sd
-s
-# Java Code Examples
-
-StackEdit supports standard Markdown syntax highlighting for various programming languages, including **Java**.
-
 [metin](![açıklama](görsel.png))
 [metin](https://)
 
-- **Backend Auth Endpoints (`/api/auth/**`)**:
-  - `POST /api/auth/register` -> Yeni kullanıcı kaydı.
-  - `POST /api/auth/login` -> Kullanıcı girişi. Başarılı girişte kısa ömürlü Access Token (Örn: 15 dakika geçerli JWT) ve uzun ömürlü Refresh Token (Örn: 7 gün geçerli) üretir. Refresh Token güvenli, HTTP-Only ve SameSite=Strict bir çerez (cookie) içinde veya güvenli yanıt gövdesinde dönebilir.
-  - `POST /api/auth/refresh` -> Geçerli bir Refresh Token alarak yeni bir JWT Access Token üretir ve döner (Silent Rotation).
-  - `POST /api/auth/logout` -> Refresh Token'ı veritabanında geçersiz kılar (revoke) ve oturumu kapatır.
-- **Spring Security Yapılandırması**:
-  - `/api/auth/**` endpoints herkese açık (permit-all) olmalıdır.
-  - `/api/cv/**` altındaki tüm endpointler kimlik doğrulamasına tabi olmalıdır (`authenticated`).
-  - Her gelen istek için JWT geçerliliğini kontrol eden `JwtAuthenticationFilter` filtresi entegre edilmelidir.
-  - `CvDocument` tablosundaki `userId` alanı artık istek yapan kimliği doğrulanmış kullanıcının `User.id` değeri ile dinamik olarak eşleştirilmelidir.
-# Files
-
-StackEdit stores your files in your browser, which means all your files are automatically saved locally and are accessible **offline!**
-
-## Create files and folders
-
-The file explorer is accessible using the button in left corner of the navigation bar. You can create a new file by clicking the **New file** button in the file explorer. You can also create folders by clicking the **New folder** button.
 
 ## Switch to another file
 

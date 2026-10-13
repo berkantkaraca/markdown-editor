@@ -400,8 +400,17 @@ function replaceBlockSource(index: number, newSource: string) {
   const mid = newSource.split("\n");
   const next = [...before, ...mid, ...after].join("\n");
   currentText = next;
+  // Satır haritasını kaydır: Enter/silme ile blok satır sayısı değişince
+  // sonraki blokların sınırları kayar, kaydırılmazsa içerik bozulur
+  const delta = mid.length - (b.endLine - b.startLine);
   b.source = newSource;
-  // Satır numaraları kaydı — bir sonraki render'da recompute edilecek
+  b.endLine = b.startLine + mid.length;
+  if (delta !== 0) {
+    for (let j = index + 1; j < blocks.length; j++) {
+      blocks[j].startLine += delta;
+      blocks[j].endLine += delta;
+    }
+  }
   updateWordCount();
   sendEdit(next);
   recordHist();
@@ -441,6 +450,11 @@ function wireRenderedBlock(div: HTMLElement, index: number) {
     });
   });
   div.addEventListener("click", (e) => {
+    // Sürükleyerek metin seçildiyse edit açma — seçim kalsın ki Delete ile silinebilsin
+    const sel0 = window.getSelection();
+    if (sel0 && !sel0.isCollapsed) {
+      return;
+    }
     const t = e.target as HTMLElement;
     if (t.closest("a") || t.closest('input[type="checkbox"]') || t.closest("pre")) {
       // kod bloğuna tıklayınca da düzenle, ama metin seçimine izin ver
@@ -1020,11 +1034,28 @@ function applyHljsTheme() {
 }
 
 // ---------- Canlı modda bloklar-arası toplu silme ----------
-liveRoot.addEventListener("keydown", (e) => {
+// Not: document seviyesinde dinlenir — sürükle-seç sonrası odak body'de olur,
+// liveRoot'a bağlı olsaydı tuş olayı hiç ulaşmazdı
+document.addEventListener("keydown", (e) => {
   if (editingIndex !== null) {
     return; // açık edit kutusu kendi halleder
   }
+  if (mode !== "live") {
+    return; // okuma salt okunur, split'te kaynak panelden silinir
+  }
   if (e.key !== "Delete" && e.key !== "Backspace") {
+    return;
+  }
+  // Odak bir girdi alanında ya da editör kromundaysa karışma
+  const ae = document.activeElement as HTMLElement | null;
+  if (
+    ae &&
+    (ae.tagName === "TEXTAREA" ||
+      ae.tagName === "INPUT" ||
+      ae.tagName === "BUTTON" ||
+      ae.isContentEditable ||
+      (ae.closest && ae.closest("#cm-host, #toolbar, #formatbar, #findbar")))
+  ) {
     return;
   }
   const sel = window.getSelection();
@@ -1455,6 +1486,8 @@ window.addEventListener("message", (event) => {
         // düzenlerken: metin güncellendi ama render blur'da yapılacak
       } else if (mode === "reading") {
         renderReading();
+      } else if (mode === "split") {
+        renderSplit();
       } else if (!cmView?.hasFocus) {
         syncCodeMirrorFromText();
       }
@@ -1470,7 +1503,7 @@ window.addEventListener("message", (event) => {
         }
       }
       if (changed) {
-        document.querySelectorAll("#live-root img, #reading-root img").forEach((node) => {
+        document.querySelectorAll("#live-root img, #reading-root img, #split-root img").forEach((node) => {
           const el = node as HTMLImageElement;
           const src = el.getAttribute("src") || "";
           const hit = imgUriCache.get(src);
