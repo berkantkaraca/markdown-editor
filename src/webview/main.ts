@@ -1,7 +1,7 @@
 import mermaid from "mermaid";
 import hljsDarkTheme from "highlight.js/styles/vs2015.css";
 import hljsLightTheme from "highlight.js/styles/vs.css";
-import { createMdPipeline } from "../shared/md-pipeline";
+import { createMdPipeline, type Block } from "../shared/md-pipeline";
 import { EditorState, Compartment } from "@codemirror/state";
 import { EditorView, keymap, highlightActiveLine, lineNumbers } from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
@@ -18,8 +18,6 @@ import {
   joinKeptLines,
   isTableBlock,
   editTable,
-  parseFrontmatter,
-  renderFrontmatterHtml,
 } from "../shared/md-utils";
 
 declare function acquireVsCodeApi(): {
@@ -34,7 +32,7 @@ const vscode = acquireVsCodeApi();
 const PROTO = 1;
 
 // ---------- markdown-it (kurulum shared/md-pipeline içindedir, test edilir) ----------
-const { md, renderWikilinks, renderBlockHtml, renderFullWithFm } = createMdPipeline();
+const { renderBlockHtml, renderFullWithFm, computeBlocks } = createMdPipeline();
 
 // ---------- state ----------
 type Mode = "source" | "live" | "split" | "reading";
@@ -51,13 +49,6 @@ const themeCompartment = new Compartment();
 const lineNumCompartment = new Compartment();
 let lineNumbersOn = true;
 let syncingScroll = false;
-
-interface Block {
-  startLine: number;
-  endLine: number; // exclusive
-  source: string;
-  html: string;
-}
 
 const $ = (id: string) => document.getElementById(id)!;
 const btnSource = $("btn-source") as HTMLButtonElement;
@@ -86,69 +77,7 @@ function debounce<T extends (...a: any[]) => void>(fn: T, ms: number): T {
 
 // (renderWikilinks / renderBlockHtml pipeline'dan gelir)
 
-function computeBlocks(text: string): Block[] {
-  const lines = text.split("\n");
-  const fm = parseFrontmatter(text);
-  const fmEnd = fm ? fm.endLine : 0;
-  const tokens = md.parse(text, {});
-  const ranges: Array<[number, number]> = [];
-  for (const tok of tokens) {
-    if (tok.map && tok.level === 0 && tok.type !== "inline") {
-      const [s, e] = tok.map as [number, number];
-      // paragraph_open + inline + paragraph_close üçlüsünü tek blok yap;
-      // token stream'de *_open tokenları map taşır, close taşımaz.
-      // Ardışık open tokenlar üst üste binmesin diye basit birleştirme:
-      ranges.push([s, e]);
-    }
-  }
-  // Çakışan / bitişik aralıkları birleştir
-  ranges.sort((a, b) => a[0] - b[0]);
-  const merged: Array<[number, number]> = [];
-  for (const r of ranges) {
-    const last = merged[merged.length - 1];
-    if (last && r[0] <= last[1]) {
-      last[1] = Math.max(last[1], r[1]);
-    } else {
-      merged.push([...r] as [number, number]);
-    }
-  }
-  // Ön madde aralığındaki tokenları at, kısmi çakışmayı kırp
-  const bodyRanges: Array<[number, number]> = [];
-  for (const [s, e] of merged) {
-    if (e <= fmEnd) {
-      continue;
-    }
-    bodyRanges.push([Math.max(s, fmEnd), e]);
-  }
-  // Token üretmeyen boş satır aralarını da "boş blok" olarak ekle ki tıklanıp yazılabilsin
-  const result: Block[] = [];
-  if (fm) {
-    result.push({ startLine: 0, endLine: fmEnd, source: fm.raw, html: renderFrontmatterHtml(fm) });
-  }
-  let cursor = fmEnd;
-  const pushGap = (s: number, e: number) => {
-    if (e > s) {
-      const source = lines.slice(s, e).join("\n");
-      // Saf boşluk satırları: her boşlukta ipucu göstermek yerine ince, tıklanabilir boşluk
-      const html = source.trim() === "" ? `<div class="gap-spacer"></div>` : renderBlockHtml(source);
-      result.push({ startLine: s, endLine: e, source, html });
-    }
-  };
-  for (const [s, e] of bodyRanges) {
-    pushGap(cursor, s);
-    const source = lines.slice(s, e).join("\n");
-    result.push({ startLine: s, endLine: e, source, html: renderBlockHtml(source) });
-    cursor = e;
-  }
-  pushGap(cursor, lines.length);
-  // Tamamen boş dosya
-  if (result.length === 0) {
-    result.push({ startLine: 0, endLine: 1, source: "", html: `<p class="empty-hint">Yazmak için tıklayın…</p>` });
-  } else if (result.length === 1 && result[0].source.trim() === "") {
-    result[0].html = `<p class="empty-hint">Yazmak için tıklayın…</p>`;
-  }
-  return result;
-}
+// (computeBlocks pipeline'dan gelir)
 
 function updateWordCount() {
   dirtyEl.textContent = isDirty ? "●" : "";

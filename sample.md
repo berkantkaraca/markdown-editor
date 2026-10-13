@@ -135,38 +135,7 @@ C --> D
 ---
 
 ## Yerleşik HTML Etiketleri
-
-<details>
-<summary>Detayları görmek için tıklayın (Collapsible/Accordion)</summary>
-<br>
-Gizli metin içeriği buradadır. Markdown editörleri HTML etiketlerini de destekler.
-</details>
-
-<br>
-
-Kırmızı renkte <font color="red">metin yazımı</font> ve <u>altı çizili metin</u>.
-
---
-
-
 yhhhjkjkjhkjhkjkhkjhkjhjkhjkhdsfsfsdf sdsf sdfs
-
-
-
-
-
-# Başlık Seviyesi 1 (H1)
-## Başlık Seviyesi 2 (H2)
-### Başlık Seviyesi 3 (H3)
-#### Başlık denemesi 4 (H4)
-##### Başlık Seviyesi 5 (H5)
-###### Başlık Seviyesi 6 (H6)
-*Bu metin italiktir* veya _bu metin italiktir_.  
-**Bu metin koyudur** veya __bu metin koyudur__.  
-***Bu metin hem koyu hem italiktir***.  
-~~Bu metnin üzeri çizilidir.~~  
-==Bu metin fosforlu/vurguludur.==  
-H~2~O (Alt simge) ve X^2^ (Üst simge)
 
 
 
