@@ -34,7 +34,6 @@ H~2~O (Alt simge) ve X^2^ (Üst simge)
    2. Alt adım B
 3. Üçüncü adım
 
-### Görev Listesi (Task List)
 - [x] Tamamlanmış görev
 - [ ] Bekleyen görev 1
 - [ ] Bekleyen görev 2
@@ -57,71 +56,7 @@ Görsel örneği:
 
 ---
 
-## Alıntılar (Blockquotes)
 
-> Bu tek seviyeli bir alıntı bloğudur.
-> 
->> Bu iç içe geçmiş ikinci seviye alıntıdır.
->>> Üçüncü seviye alıntı.
-
----
-
-## Kod Bloğu ve Sözdizimi Vurgulama
-
-Satır içi kod kullanımı: `npm install stackedit`
-
-Çok satırlı JavaScript kod bloğu:
-```java
-function selamla(isim) {
-  console.log(`Merhaba, ${isim}!`);
-}
-selamla('Dünya');
-```
-
-Çok satırlı Python kod bloğu:
-```python
-def topla(a, b):
-    return a + b
-
-print(topla(5, 10))
-```
-
----
-
-## Tablolar
-
-| Sütun 1 (Sola Hizalı) | Sütun 2 (Ortalı) | Sütun 3 (Sağa Hizalı) |
-| :--- | :---: | ---: |
-| Hücre 1 | Hücre 2 | 100 ₺ |
-| Veri A | Veri B | 250 ₺ |
-| Metin | Metin | 1.000 ₺ |
-
----
-
-## Matematiksel İfadeler (KaTeX / MathJax)
-
-Satır içi matematiksel ifade: $E = mc^2$
-
-Blok matematiksel ifade:
-$$
-\Gamma(z) = \int_0^\infty t^{z-1}e^{-t}dt
-$$
-
----
-
-## UML Şemaları ve Akış Şemaları (Mermaid)
-
-### Sequence Diagram
-```mermaid
-sequenceDiagram
-Alice ->> Bob: Hello Bob, how are you?
-Bob-->>John: How about you John?
-Bob--x Alice: I am good thanks!
-Bob-x John: I am good thanks!
-Note right of John: Bob thinks a long time.
-Bob-->Alice: Checking with John...
-Alice->John: Yes... John, how are you?
-```
 
 ### Flowchart
 ```mermaid

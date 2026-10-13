@@ -18,6 +18,8 @@ import {
   joinKeptLines,
   isTableBlock,
   editTable,
+  listItemLineSpans,
+  listEnterAction,
 } from "../shared/md-utils";
 
 declare function acquireVsCodeApi(): {
@@ -110,6 +112,8 @@ function initCodeMirror() {
       history(),
       highlightActiveLine(),
       keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap]),
+      // Liste Enter davranışı (eşleşmezse false döner, varsayılan Enter çalışır)
+      keymap.of([{ key: "Enter", run: cmListEnter }]),
       search({ top: true }),
       highlightSelectionMatches(),
       markdown(),
@@ -197,11 +201,20 @@ function syncCodeMirrorFromText() {
     return;
   }
   const docText = cmView.state.doc.toString();
-  if (docText !== currentText) {
-    cmApplyingExternal = true;
-    cmView.dispatch({ changes: { from: 0, to: docText.length, insert: currentText } });
-    cmApplyingExternal = false;
+  if (docText === currentText) {
+    return;
   }
+  // İmleci koru: tam-metin değişiminde seçim başını kelepçele
+  const sel = cmView.state.selection.main;
+  cmApplyingExternal = true;
+  cmView.dispatch({
+    changes: { from: 0, to: docText.length, insert: currentText },
+    selection: {
+      anchor: Math.min(sel.anchor, currentText.length),
+      head: Math.min(sel.head, currentText.length),
+    },
+  });
+  cmApplyingExternal = false;
 }
 
 function applyWordWrap() {
@@ -326,17 +339,49 @@ function buildEditBox(b: Block, index: number): HTMLElement {
       e.preventDefault();
       commitEdit();
     }
+    // Düz Enter: liste öğesinde devam et / çık / girinti azalt
+    if (e.key === "Enter" && !e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey) {
+      const pos = ta.selectionStart ?? ta.value.length;
+      const end = ta.selectionEnd ?? pos;
+      if (pos === end) {
+        const lineStart = ta.value.lastIndexOf("\n", pos - 1) + 1;
+        const nl = ta.value.indexOf("\n", pos);
+        const lineEnd = nl === -1 ? ta.value.length : nl;
+        const act = listEnterAction(ta.value.slice(lineStart, lineEnd));
+        if (act.kind !== "none") {
+          e.preventDefault();
+          recordHist(true);
+          if (act.kind === "exit") {
+            ta.setRangeText("", lineStart, lineEnd, "end");
+          } else if (act.kind === "outdent") {
+            const m2 = ta.value.slice(lineStart, lineEnd).match(/^(\t| {1,2})/);
+            if (m2) {
+              ta.setRangeText("", lineStart, lineStart + m2[0].length, "end");
+            } else {
+              ta.setRangeText("", lineStart, lineEnd, "end");
+            }
+          } else {
+            ta.setRangeText("\n" + (act.marker ?? ""), pos, end, "end");
+          }
+          autoGrow(ta);
+          replaceBlockSource(index, ta.value);
+        }
+      }
+    }
     // NOT: stopPropagation YOK — Delete/Backspace ve Ctrl+F gibi tuşlar
     // document dinleyicilerine ulaşmalı (bloklar-arası silme, bulma çubuğu).
   });
   ta.addEventListener("blur", (e) => {
-    // Biçim düğmesine geçildiyse edit açık kalsın (komut hedefsiz kalmasın)
+    // Biçim düğmesine/açık menüye/diyaloğa geçildiyse edit açık kalsın
     const to = (e.relatedTarget as HTMLElement | null) || null;
-    if (to && to.closest && (to.closest("#formatbar") || to.closest(".kmenu"))) {
+    if (
+      to &&
+      to.closest &&
+      (to.closest("#formatbar") || to.closest(".kmenu") || to.closest(".kdialog"))
+    ) {
       return;
     }
-    // Açılır menü açıkken (odak menüde) commit ertele — seçim 150 ms'de ölmesin
-    if (openMenuEl) {
+    if (openMenuEl || openDialogEl) {
       return;
     }
     // checkbox/link tıklamasına izin vermek için microtask ertele
@@ -813,6 +858,138 @@ function openMenu(
   first?.focus();
 }
 
+// ---------- Popover diyalog (bağlantı / görsel) ----------
+let openDialogEl: HTMLElement | null = null;
+
+function closeDialog() {
+  openDialogEl?.remove();
+  openDialogEl = null;
+  document.removeEventListener("mousedown", dialogOutside, true);
+}
+
+function dialogOutside(e: MouseEvent) {
+  const t = e.target as HTMLElement | null;
+  if (openDialogEl && !(t?.closest?.(".kdialog") || t?.closest?.("[data-cmd='link'],[data-cmd='image']"))) {
+    closeDialog();
+  }
+}
+
+interface DialogField {
+  key: string;
+  label: string;
+  value: string;
+}
+
+function openDialog(opts: {
+  title: string;
+  fields: DialogField[];
+  okLabel: string;
+  focusSecond?: boolean;
+  onOk: (vals: Record<string, string>) => void;
+}) {
+  closeMenu();
+  closeDialog();
+  // Hedef + seçim dondurulur (odak diyaloğa geçecek)
+  const target = getTarget();
+  let cmSel: { anchor: number; head: number } | null = null;
+  let taCtx: { el: HTMLTextAreaElement; index: number; s: number; e: number } | null = null;
+  if (target?.kind === "cm" && cmView) {
+    const r = cmView.state.selection.main;
+    cmSel = { anchor: r.anchor, head: r.head };
+  } else if (target?.kind === "ta") {
+    taCtx = {
+      el: target.el,
+      index: target.index,
+      s: target.el.selectionStart ?? 0,
+      e: target.el.selectionEnd ?? 0,
+    };
+  } else {
+    return;
+  }
+  const box = document.createElement("div");
+  box.className = "kdialog";
+  const title = document.createElement("div");
+  title.className = "kdialog-title";
+  title.textContent = opts.title;
+  box.appendChild(title);
+  const inputs: Record<string, HTMLInputElement> = {};
+  for (const f of opts.fields) {
+    const label = document.createElement("label");
+    label.textContent = f.label;
+    const input = document.createElement("input");
+    input.type = "text";
+    input.value = f.value;
+    inputs[f.key] = input;
+    label.appendChild(input);
+    box.appendChild(label);
+  }
+  const row = document.createElement("div");
+  row.className = "kdialog-row";
+  const cancel = document.createElement("button");
+  cancel.type = "button";
+  cancel.textContent = "Vazgeç";
+  const ok = document.createElement("button");
+  ok.type = "button";
+  ok.textContent = opts.okLabel;
+  ok.className = "primary";
+  row.appendChild(cancel);
+  row.appendChild(ok);
+  box.appendChild(row);
+  const done = (commit: boolean) => {
+    const vals: Record<string, string> = {};
+    for (const k of Object.keys(inputs)) {
+      vals[k] = inputs[k].value;
+    }
+    closeDialog();
+    if (!commit) {
+      return;
+    }
+    // Seçimi geri kur, sonra ekle
+    if (cmSel && cmView) {
+      cmView.dispatch({
+        selection: {
+          anchor: Math.min(cmSel.anchor, cmView.state.doc.length),
+          head: Math.min(cmSel.head, cmView.state.doc.length),
+        },
+      });
+      cmView.focus();
+    } else if (taCtx && taCtx.el.isConnected) {
+      taCtx.el.focus();
+      taCtx.el.selectionStart = Math.min(taCtx.s, taCtx.el.value.length);
+      taCtx.el.selectionEnd = Math.min(taCtx.e, taCtx.el.value.length);
+    } else {
+      return;
+    }
+    opts.onOk(vals);
+  };
+  cancel.addEventListener("click", (e) => {
+    e.preventDefault();
+    done(false);
+  });
+  ok.addEventListener("click", (e) => {
+    e.preventDefault();
+    done(true);
+  });
+  box.addEventListener("mousedown", (e) => e.preventDefault());
+  box.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      done(false);
+    } else if (e.key === "Enter" && (e.target as HTMLElement)?.tagName === "INPUT") {
+      e.preventDefault();
+      done(true);
+    }
+    e.stopPropagation();
+  });
+  document.body.appendChild(box);
+  openDialogEl = box;
+  document.addEventListener("mousedown", dialogOutside, true);
+  const fields = Object.values(inputs);
+  const focusEl = opts.focusSecond && fields.length > 1 ? fields[1] : fields[0];
+  focusEl?.focus();
+  focusEl?.select();
+}
+
 // ---------- Biçim çubuğu + geri al/yinele ----------
 const formatbar = $("formatbar");
 const fmtButtons = Array.from(formatbar.querySelectorAll("button[data-cmd]")) as HTMLButtonElement[];
@@ -832,13 +1009,47 @@ function getTarget(): Target {
   return null;
 }
 
-// Snapshot tabanlı geri al/yinele (Kaynak ve Canlı modda ortak çalışır)
-const hist: string[] = [];
+// Snapshot tabanlı geri al/yinele (Kaynak ve Canlı modda ortak çalışır).
+// Her anlık görüntü imleç çapası taşır (referans tekniğin wbr karşılığı);
+// toplam ~2MB aşılınca en eskiler atılır.
+interface HistEntry {
+  text: string;
+  anchor: number | null; // doküman offset'i
+}
+const hist: HistEntry[] = [];
 let hi = -1;
 let lastRecTime = 0;
+
+// O anki imleç konumu (doküman offset'i)
+function currentAnchor(): number | null {
+  if ((mode === "source" || mode === "split") && cmView) {
+    return cmView.state.selection.main.head;
+  }
+  if (mode === "live") {
+    const ei = editingIndex;
+    if (ei !== null && blocks[ei]) {
+      const ta = liveRoot.querySelector("div.block.editing textarea") as HTMLTextAreaElement | null;
+      if (ta) {
+        const head = currentText.split("\n").slice(0, blocks[ei].startLine).join("\n");
+        return head.length + (blocks[ei].startLine > 0 ? 1 : 0) + (ta.selectionStart ?? 0);
+      }
+    }
+  }
+  return null;
+}
+
+function histChars(): number {
+  let n = 0;
+  for (const h of hist) {
+    n += h.text.length;
+  }
+  return n;
+}
+
 function recordHist(force = false) {
   const now = Date.now();
-  if (hist[hi] === currentText) {
+  const top = hi >= 0 ? hist[hi] : undefined;
+  if (top && top.text === currentText) {
     return;
   }
   if (!force && now - lastRecTime < 2500 && hi >= 0) {
@@ -846,19 +1057,25 @@ function recordHist(force = false) {
   }
   lastRecTime = now;
   hist.length = hi + 1;
-  hist.push(currentText);
-  if (hist.length > 100) {
-    hist.shift();
-  }
+  hist.push({ text: currentText, anchor: currentAnchor() });
   hi = hist.length - 1;
+  while (hist.length > 100 || histChars() > 2000000) {
+    hist.shift();
+    hi--;
+  }
   refreshBar();
 }
-function applyHistText(t: string) {
+function applyHistText(t: string, anchor: number | null = null) {
   currentText = t;
   updateWordCount();
   vscode.postMessage({ proto: PROTO, type: "edit", text: t });
   editingIndex = null;
   syncCodeMirrorFromText();
+  if (anchor !== null && cmView && (mode === "source" || mode === "split")) {
+    const pos = Math.max(0, Math.min(anchor, cmView.state.doc.length));
+    cmView.dispatch({ selection: { anchor: pos } });
+    cmView.focus();
+  }
   if (mode === "live") {
     renderLive();
   } else if (mode === "reading") {
@@ -872,15 +1089,15 @@ function doUndo() {
   if (hi < 0) {
     return;
   }
-  if (currentText !== hist[hi]) {
+  if (currentText !== hist[hi].text) {
     // Henüz kaydedilmemiş yazım: anlık durumu kaydet, sonra geri git
     hist.length = hi + 1;
-    hist.push(currentText);
+    hist.push({ text: currentText, anchor: currentAnchor() });
     hi = hist.length - 1;
   }
   if (hi > 0) {
     hi--;
-    applyHistText(hist[hi]);
+    applyHistText(hist[hi].text, hist[hi].anchor);
   } else {
     refreshBar();
   }
@@ -888,7 +1105,7 @@ function doUndo() {
 function doRedo() {
   if (hi < hist.length - 1) {
     hi++;
-    applyHistText(hist[hi]);
+    applyHistText(hist[hi].text, hist[hi].anchor);
   }
 }
 
@@ -1074,6 +1291,43 @@ import type { TableOp } from "../shared/md-utils";
 
 const TABLE_TEMPLATE = "\n| Başlık 1 | Başlık 2 |\n| --- | --- |\n|  |  |\n";
 
+// Kaynak modda liste Enter davranışı (bulamazsa false → varsayılan Enter)
+function cmListEnter(view: EditorView): boolean {
+  if (!view.state.selection.main.empty) {
+    return false;
+  }
+  const head = view.state.selection.main.head;
+  const line = view.state.doc.lineAt(head);
+  const act = listEnterAction(line.text);
+  if (act.kind === "none") {
+    return false;
+  }
+  recordHist(true);
+  if (act.kind === "exit") {
+    view.dispatch({ changes: { from: line.from, to: line.to, insert: "" } });
+  } else if (act.kind === "outdent") {
+    const m = line.text.match(/^(\t| {1,2})/);
+    if (m) {
+      view.dispatch({ changes: { from: line.from, to: line.from + m[0].length, insert: "" } });
+    } else {
+      view.dispatch({ changes: { from: line.from, to: line.to, insert: "" } });
+    }
+  } else {
+    const at = head - line.from;
+    const marker = act.marker ?? "";
+    view.dispatch({
+      changes: {
+        from: line.from,
+        to: line.to,
+        insert: line.text.slice(0, at) + "\n" + marker + line.text.slice(at),
+      },
+      selection: { anchor: line.from + at + 1 + marker.length },
+    });
+  }
+  view.focus();
+  return true;
+}
+
 function tableOp(op: TableOp) {
   const t = getTarget();
   if (!t) {
@@ -1162,9 +1416,24 @@ function runFormat(cmd: string) {
       ]);
       break;
     }
-    case "image":
-      insertAtCursor("![açıklama](görsel.png)", 2, 10);
+    case "image": {
+      const label = selText() || "açıklama";
+      openDialog({
+        title: "Görsel ekle",
+        fields: [
+          { key: "alt", label: "Açıklama", value: label },
+          { key: "src", label: "Yol", value: "resim.png" },
+        ],
+        okLabel: "Ekle",
+        focusSecond: true,
+        onOk: (vals) => {
+          const a = vals.alt.trim() || "açıklama";
+          const s = vals.src.trim() || "resim.png";
+          insertAtCursor(`![${a}](${s})`);
+        },
+      });
       break;
+    }
     case "bullet":
       eachLineSel(togglePrefix("- "));
       break;
@@ -1186,8 +1455,31 @@ function runFormat(cmd: string) {
       break;
     case "link": {
       const label = selText() || "metin";
-      const urlStart = label.length + 3;
-      insertAtCursor(`[${label}](https://)`, urlStart, urlStart + 8);
+      openDialog({
+        title: "Bağlantı ekle",
+        fields: [
+          { key: "text", label: "Metin", value: label },
+          { key: "url", label: "Adres", value: "https://" },
+        ],
+        okLabel: "Ekle",
+        focusSecond: true,
+        onOk: (vals) => {
+          const t = vals.text.trim() || "metin";
+          const u = vals.url.trim() || "https://";
+          const ins = `[${t}](${u})`;
+          // URL'yi seçili bırak ki üstüne yazılabilsin
+          const pos = t.length + 3;
+          const tgt = getTarget();
+          if (!tgt) {
+            return;
+          }
+          if (tgt.kind === "cm") {
+            cmInsert(ins, pos, pos + u.length);
+          } else {
+            taInsert(ins, pos, pos + u.length);
+          }
+        },
+      });
       break;
     }
   }
@@ -1201,7 +1493,7 @@ function refreshBar() {
     return;
   }
   const t = getTarget();
-  const canUndo = hi > 0 || (hi >= 0 && currentText !== hist[hi]);
+  const canUndo = hi > 0 || (hi >= 0 && currentText !== hist[hi].text);
   const canRedo = hi < hist.length - 1;
   for (const b of fmtButtons) {
     const cmd = b.dataset.cmd || "";
@@ -1274,6 +1566,30 @@ document.addEventListener("keydown", (e) => {
     return;
   }
   const range = sel.getRangeAt(0);
+  const contained = (el: HTMLElement): boolean => {
+    try {
+      const r2 = document.createRange();
+      r2.selectNodeContents(el);
+      return (
+        range.compareBoundaryPoints(Range.START_TO_START, r2) <= 0 &&
+        range.compareBoundaryPoints(Range.END_TO_END, r2) >= 0
+      );
+    } catch {
+      return false;
+    }
+  };
+  const blockDivOf = (n: Node | null): { div: HTMLElement; idx: number } | null => {
+    const el = (n as HTMLElement)?.parentElement;
+    const host = el?.closest?.("div.block[data-index]:not(.editing)") as HTMLElement | null;
+    if (!host) {
+      return null;
+    }
+    const idx = Number(host.dataset.index);
+    if (Number.isNaN(idx) || !blocks[idx]) {
+      return null;
+    }
+    return { div: host, idx };
+  };
   const victims: number[] = [];
   liveRoot.querySelectorAll("div.block:not(.editing)").forEach((node) => {
     const div = node as HTMLElement;
@@ -1281,30 +1597,46 @@ document.addEventListener("keydown", (e) => {
     if (Number.isNaN(idx) || !blocks[idx]) {
       return;
     }
-    try {
-      const r2 = document.createRange();
-      r2.selectNodeContents(div);
-      if (
-        range.compareBoundaryPoints(Range.START_TO_START, r2) <= 0 &&
-        range.compareBoundaryPoints(Range.END_TO_END, r2) >= 0
-      ) {
-        victims.push(idx);
-      }
-    } catch {
-      /* seçim blok dışına taştıysa yoksay */
+    if (contained(div)) {
+      victims.push(idx);
     }
   });
-  if (victims.length === 0) {
+  const victimSet = new Set(victims);
+  // Kenar bloklarda kısmi seçim: liste öğeleri (<li>) satır satır eşlenir.
+  // Böylece "orta + komşu öğeler" gibi seçimlerde liste içi silinir.
+  const edgeSpans: Array<[number, number]> = [];
+  const mapEdgeLis = (info: { div: HTMLElement; idx: number } | null) => {
+    if (!info || victimSet.has(info.idx)) {
+      return;
+    }
+    const b = blocks[info.idx];
+    const srcLines = b.source.split("\n");
+    if (!srcLines.some((l) => /^\s*(?:[-*+]|\d+[.)])(?:\s|$)/.test(l))) {
+      return; // liste bloğu değil
+    }
+    const items = listItemLineSpans(srcLines);
+    const allLi = Array.from(info.div.querySelectorAll("li"));
+    if (allLi.length !== items.length) {
+      return; // yapı uyuşmazsa güvenli tarafta kal
+    }
+    allLi.forEach((liNode, k) => {
+      if (contained(liNode as HTMLElement)) {
+        const [s, e] = items[k];
+        edgeSpans.push([b.startLine + s, b.startLine + e]);
+      }
+    });
+  };
+  mapEdgeLis(blockDivOf(sel.anchorNode));
+  mapEdgeLis(blockDivOf(sel.focusNode));
+  if (victims.length === 0 && edgeSpans.length === 0) {
     // Kısmi seçim: çapa bloğu düzenlemeye aç (ikinci Delete içeride çalışır)
-    const anchorEl = sel.anchorNode?.parentElement;
-    const host = anchorEl?.closest?.("div.block[data-index]") as HTMLElement | null;
-    const idx = host ? Number(host.dataset.index) : NaN;
-    if (host && !Number.isNaN(idx) && blocks[idx] && editingIndex !== idx) {
+    const info = blockDivOf(sel.anchorNode);
+    if (info && editingIndex !== info.idx) {
       e.preventDefault();
       if (editingIndex !== null) {
         commitEdit();
       }
-      editingIndex = idx;
+      editingIndex = info.idx;
       renderLive();
       // Bayat seçimi temizle: düğümler yıkıldı, ikinci Delete TA içinde çalışsın
       sel.removeAllRanges();
@@ -1317,10 +1649,11 @@ document.addEventListener("keydown", (e) => {
     commitEdit();
   }
   recordHist(true);
-  const spans = victims
+  const spans: Array<[number, number]> = victims
     .map((i) => blocks[i])
     .filter((b) => !!b)
-    .map((b) => [b.startLine, b.endLine] as [number, number]);
+    .map((b) => [b.startLine, b.endLine] as [number, number])
+    .concat(edgeSpans);
   const lines = currentText.split("\n");
   const removed = new Array<boolean>(lines.length).fill(false);
   for (const [s, en] of spans) {
@@ -1651,6 +1984,22 @@ document.addEventListener("copy", (e) => {
       }
     }
   }
+  if (victims.length === 0) {
+    // Tek başlık bloğunda kısmi seçim: işaretleri onararak kopyala
+    // ("Başlık"ın yarısı seçilse bile pano "# ..." olarak gider)
+    const anchorEl2 = sel.anchorNode?.parentElement;
+    const host2 = anchorEl2?.closest?.("div.block[data-index]:not(.editing)") as HTMLElement | null;
+    if (host2 && host2.contains(sel.focusNode)) {
+      const b2 = blocks[Number(host2.dataset.index)];
+      const hm = b2 ? b2.source.match(/^(#{1,6}\s+)/) : null;
+      const txt = sel.toString();
+      if (b2 && hm && txt.trim() !== "" && e.clipboardData) {
+        e.preventDefault();
+        e.clipboardData.setData("text/plain", hm[0] + txt.replace(/^#+\s*/, ""));
+        return;
+      }
+    }
+  }
   if (victims.length === 0 || !e.clipboardData) {
     return;
   }
@@ -1796,7 +2145,7 @@ window.addEventListener("message", (event) => {
       currentText = text;
       // Geri-al zincirinin başlangıç noktası
       if (hist.length === 0) {
-        hist.push(text);
+        hist.push({ text, anchor: null });
         hi = 0;
       }
       updateWordCount();

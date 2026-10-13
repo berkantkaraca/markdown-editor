@@ -24,6 +24,12 @@ Giriş paragrafı burada.
 | Ali | 3 |
 
 Son paragraf matematik $x^2$ ile.
+
+1. Birinci adım
+2. İkinci adım
+   1. Alt adım A
+   2. Alt adım B
+3. Üçüncü adım
 `;
 
 const SKELETON = `<!DOCTYPE html>
@@ -320,6 +326,109 @@ describe("e2e: markdown kopyalama", () => {
     (h1 as any).dispatchEvent(ev);
     assert.ok(dt.data["text/plain"] !== undefined, "pano yazıldı");
     assert.match(dt.data["text/plain"], /^# Başlık Bir$/);
+  });
+});
+
+describe("e2e: iç içe liste kısmi silme", () => {
+  it("kapsanan öğeler satır satır silinir", async () => {
+    const divs = Array.from(doc.querySelectorAll("#live-root div.block")) as any[];
+    const listDiv = divs.find((d: any) => (d.textContent || "").includes("Alt adım A"));
+    assert.ok(listDiv, "sıralı liste bloğu var");
+    const lis = Array.from(listDiv.querySelectorAll("li")) as any[];
+    assert.equal(lis.length, 5);
+    const sel = win.getSelection();
+    const range = doc.createRange();
+    range.setStart(lis[2], 0);
+    range.setEnd(lis[4], lis[4].childNodes.length);
+    sel.removeAllRanges();
+    sel.addRange(range);
+    posted.length = 0; // bayat edit mesajları testi yalan söylemesin
+    doc.dispatchEvent(new win.KeyboardEvent("keydown", { key: "Delete", bubbles: true }));
+    await sleep(450);
+    const text = lastEdit();
+    assert.ok(text !== undefined, "edit mesajı gönderildi");
+    assert.ok(text!.includes("Birinci adım"), "kalan öğe duruyor");
+    assert.ok(!text!.includes("Alt adım"), "iç öğeler silindi");
+    assert.ok(!text!.includes("Üçüncü adım"), "son öğe silindi");
+  });
+});
+
+describe("e2e: liste Enter", () => {
+  it("madde satırında Enter devam ettirir", async () => {
+    send({ proto: 1, type: "update", text: "- elma\n- armut", isDirty: false });
+    await frames(4);
+    const divs = Array.from(doc.querySelectorAll("#live-root div.block")) as any[];
+    const listDiv = divs.find((d: any) => (d.textContent || "").includes("elma"));
+    listDiv.dispatchEvent(new win.MouseEvent("click", { bubbles: true }));
+    await frames(4);
+    const ta = doc.querySelector("#live-root textarea") as any;
+    assert.ok(ta, "liste editi açıldı");
+    ta.selectionStart = 6;
+    ta.selectionEnd = 6;
+    ta.dispatchEvent(new win.KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    await frames(2);
+    assert.equal(ta.value, "- elma\n- \n- armut");
+  });
+
+  it("boş maddede Enter listeden çıkarır", async () => {
+    const ta = doc.querySelector("#live-root textarea") as any;
+    assert.ok(ta, "edit sürüyor");
+    ta.selectionStart = 9;
+    ta.selectionEnd = 9; // "- " satırının sonu
+    ta.dispatchEvent(new win.KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    await frames(2);
+    assert.equal(ta.value, "- elma\n\n- armut");
+    ta.dispatchEvent(new win.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    await frames(3);
+  });
+});
+
+describe("e2e: bağlantı diyaloğu", () => {
+  it("alanlarla bağlantı ekler", async () => {
+    send({ proto: 1, type: "update", text: SAMPLE, isDirty: false });
+    await frames(4);
+    const gap = (doc.querySelector("#live-root .gap-spacer") as any)?.parentElement as any;
+    assert.ok(gap, "boş blok var");
+    gap.dispatchEvent(new win.MouseEvent("click", { bubbles: true }));
+    await frames(4);
+    let ta = doc.querySelector("#live-root textarea") as any;
+    assert.ok(ta, "boş blok editi açıldı");
+    (doc.querySelector('button[data-cmd="link"]') as any).click();
+    await frames(2);
+    const dlg = doc.querySelector(".kdialog") as any;
+    assert.ok(dlg, "diyalog açıldı");
+    const inputs = dlg.querySelectorAll("input");
+    inputs[0].value = "Site";
+    inputs[1].value = "https://ornek.com";
+    (dlg.querySelector("button.primary") as any).click();
+    await frames(2);
+    ta = doc.querySelector("#live-root textarea") as any;
+    assert.ok(ta && ta.value.includes("[Site](https://ornek.com)"), "bağlantı eklendi");
+    ta.dispatchEvent(new win.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    await frames(3);
+  });
+});
+
+describe("e2e: kısmi başlık kopyası", () => {
+  it("işaretler onarılır", async () => {
+    const openTa = doc.querySelector("#live-root textarea") as any;
+    if (openTa) {
+      openTa.dispatchEvent(new win.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      await frames(3);
+    }
+    const h1 = doc.querySelector("#live-root h1") as any;
+    assert.ok(h1, "h1 var");
+    const sel = win.getSelection();
+    const range = doc.createRange();
+    range.setStart(h1.firstChild, 2);
+    range.setEnd(h1.firstChild, 7);
+    sel.removeAllRanges();
+    sel.addRange(range);
+    const dt: any = { data: {} as any, setData(k: string, v: string) { this.data[k] = v; } };
+    const ev = new win.Event("copy", { bubbles: true, cancelable: true });
+    Object.defineProperty(ev, "clipboardData", { value: dt });
+    (h1 as any).dispatchEvent(ev);
+    assert.equal(dt.data["text/plain"], "# şlık ");
   });
 });
 

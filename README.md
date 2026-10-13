@@ -20,7 +20,8 @@ Ekstralar:
 - Kod blokları VS Code temasına uygun renkli vurgulanır (koyu/açık otomatik).
 - Panodan görsel yapıştırma (`Ctrl+V`): md dosyasının yanındaki `assets/` klasörüne kaydedilir, imlece `![](...)` eklenir.
 - Göreli görseller (`assets/x.png` gibi) önizlemede doğrudan gösterilir.
-- Üstteki biçim çubuğu (Kaynak, Canlı ve Split modda): geri al/yinele, kalın/italik/üstü çizili, başlık seviyeleri (H ▾), liste/alıntı/kod, tablo menüsü (▦ Tablo ▾), bağlantı/görsel ekleme; mod sekmeleri çubuğun en sağında.
+- Üstteki biçim çubuğu (Kaynak, Canlı ve Split modda): geri al/yinele, kalın/italik/üstü çizili, başlık seviyeleri (H ▾), liste/alıntı/kod, tablo menüsü (▦ Tablo ▾), bağlantı/görsel ekleme (alan doldurmalı iletişim kutusuyla); mod sekmeleri çubuğun en sağında.
+- Liste satırında Enter: maddeye devam eder (numara artar, görev kutusu boşalır), boş maddede listeden çıkar / girintiyi azaltır.
 - Canlı önizlemede kopyalama markdown olarak yapılır (blok seçiminde kaynak metin panoya gider).
 - Kaynak modda `Ctrl+F` ile ara/değiştir (temaya uygun panel).
 - Canlı/Okuma/Split önizlemede `Ctrl+F` ile bulma çubuğu: büyük/küçük harf (Aa), tüm sözcük, normal ifade, sayaç, `Enter` ile gezinme; `≡` ile Değiştir/Tümü (kaynak metinde, `$1` destekli).

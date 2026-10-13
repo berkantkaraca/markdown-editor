@@ -66,6 +66,37 @@ export const setHeadingLevel =
     return `${"#".repeat(level)} ${t.replace(/^(#{1,6}\s+)/, "")}`;
   };
 
+// Enter'a basılan satır liste öğesiyse ne yapılacağı (canlı kutu + kaynak modu).
+// İşaret arkasında boşluk/EOL şartı aranır ("1.2.3" gibi metinler yakalanmaz).
+export interface ListEnterResult {
+  kind: "none" | "continue" | "exit" | "outdent";
+  marker?: string;
+}
+
+export function listEnterAction(line: string): ListEnterResult {
+  const m = line.match(/^([ \t]*)((?:[-*+])|(\d+)([.)]))(?=\s|$)((?:[ \t]+\[[ xX]\])?)(.*)$/);
+  if (!m) {
+    return { kind: "none" };
+  }
+  const indent = m[1];
+  const num = m[3];
+  const delim = m[4];
+  const task = m[5] ?? "";
+  const rest = m[6] ?? "";
+  if (rest.trim() === "") {
+    if (indent === "") {
+      return { kind: "exit" };
+    }
+    return { kind: "outdent" };
+  }
+  let mark = m[2];
+  if (num !== undefined) {
+    mark = `${parseInt(num, 10) + 1}${delim}`;
+  }
+  const taskBox = task ? task.replace(/\[x\]/i, "[ ]") : "";
+  return { kind: "continue", marker: `${indent}${mark}${taskBox} ` };
+}
+
 // Düz paragraf mı? (tablo/liste/başlık/alıntı/kod değilse evet)
 export function isParaLike(t: string): boolean {
   return !/^\s*(#{1,6}\s+|>\s?|\||`{3,}|~{3,}|\s*[-*+]\s+|\s*\d+[.)]\s+|\s{4,}|\t)/.test(t);
@@ -137,8 +168,25 @@ export function isTableBlock(source: string): boolean {
   return rows[0].trim().startsWith("|") && isSepRow(rows[1]);
 }
 
-export type TableOp = "add-row" | "del-row" | "add-col" | "del-col";
+// Liste bloğundaki her öğenin satır aralığı (iç içe öğeler düz sırada).
+// Sondaki boş satırlar aralığa dahil edilmez (ayraçlar korunur).
+export function listItemLineSpans(lines: string[]): Array<[number, number]> {
+  const starts: number[] = [];
+  lines.forEach((l, i) => {
+    if (/^\s*(?:[-*+]|\d+[.)])(?:\s+(?:\[[ xX]\]\s+)?|\s*$)/.test(l)) {
+      starts.push(i);
+    }
+  });
+  return starts.map((s, k) => {
+    let e = k + 1 < starts.length ? starts[k + 1] : lines.length;
+    while (e - 1 > s && lines[e - 1].trim() === "") {
+      e--;
+    }
+    return [s, e] as [number, number];
+  });
+}
 
+export type TableOp = "add-row" | "del-row" | "add-col" | "del-col";
 export function editTable(source: string, op: TableOp): string | null {
   if (!isTableBlock(source)) {
     return null;

@@ -170,7 +170,6 @@ edit kutusunu kapatıp tazeler.
    yeniden açma.
 
 ## V2 ekleri
-
 - **`src/shared/md-utils.ts`**: saf yardımcılar (bulma regex'i, satır aç-kapa,
   tablo işlemleri, frontmatter, wikilink/başlık çözümleme, mime). `npm test`
   (`node --test`, sıfır bağımlılık, 27 test) ile doğrulanır.
@@ -266,5 +265,19 @@ code --install-extension karaca-md-editor-0.1.0.vsix
 - Önizlemede bulma-değiştirme sayaç sırası ile kaynak sırası sentaks
   karakterli sorgularda sapabilir.
 - `../` ile klasör dışına çıkan göreli görseller yüklenemez.
-- Yapıştırma/geri alma sonrası imleç konumu korunmaz.
-- Matematik (KaTeX) ve Mermaid yok (bkz. `TODO.md`).
+- Canlı modda geri alma sonrası kutu kapanır (imleç Kaynak/Split modda korunur).
+
+## Faz 1-3 uyarlama notları (referans tekniklerin bizdeki karşılığı)
+
+- **İmleç çapası:** Referanstaki `wbr` düğümü bizde gerekmedi — textarea modeli
+  imleci doğal korur. Karşılığı: `syncCodeMirrorFromText` seçim-kelepçeleme +
+  undo anlık görüntülerinde doküman offset çapası (`HistEntry.anchor`) +
+  ~2MB geçmiş tavanı. Ayrı diff kütüphanesi bu ölçekte gereksiz bulundu.
+- **Kopyada başlık onarımı:** Tek başlık bloğunda kısmi seçim panoya işaretlerle
+  gider (`## ` + seçili metin); çok blokta kaynak birleşimi zaten vardı.
+- **Liste Enter:** `listEnterAction` (devam / çık / girinti-azalt, numara artar,
+  görev kutusu boşalır) hem canlı kutuda hem Kaynak modda (CM tuş eşleme) çalışır.
+- **Komşu birleştirme:** Metin-tabanlı modelde gerekmedi — bloklar her renderda
+  metinden yeniden türetildiği için liste kendiliğinden bütün kalır.
+- **Popover:** Bağlantı/Görsel düğmeleri alan doldurmalı iletişim kutusu açar
+  (metin+adres, açıklama+yol); seçim dondurulup onayda geri kurulur.

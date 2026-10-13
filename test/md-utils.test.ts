@@ -18,6 +18,8 @@ import {
   mimeToExt,
   escapeRegExp,
   setHeadingLevel,
+  listItemLineSpans,
+  listEnterAction,
 } from "../src/shared/md-utils.js";
 
 describe("togglePrefix", () => {
@@ -197,6 +199,57 @@ describe("setHeadingLevel", () => {
     assert.equal(setHeadingLevel(4)("## Eski"), "#### Eski");
     assert.equal(setHeadingLevel(9)("x"), "###### x");
     assert.equal(setHeadingLevel(2)("   "), null);
+  });
+});
+
+describe("listItemLineSpans", () => {
+  it("düz + iç içe + görev öğeleri", () => {
+    const lines = [
+      "1. Birinci adım",
+      "2. İkinci adım",
+      "   1. Alt adım A",
+      "   2. Alt adım B",
+      "3. Üçüncü adım",
+      "",
+      "- [ ] görev",
+    ];
+    assert.deepEqual(listItemLineSpans(lines), [
+      [0, 1],
+      [1, 2],
+      [2, 3],
+      [3, 4],
+      [4, 5],
+      [6, 7],
+    ]);
+  });
+  it("liste dışı satırları atlar, boşlukları budar", () => {
+    const lines = ["- a", "  devam satırı", "", "- b"];
+    assert.deepEqual(listItemLineSpans(lines), [
+      [0, 2],
+      [3, 4],
+    ]);
+  });
+  it("öğesiz metinde boş döner", () => {
+    assert.deepEqual(listItemLineSpans(["düz yazı", "devamı"]), []);
+  });
+});
+
+describe("listEnterAction", () => {
+  it("devam: madde, numaralı (artan), görev", () => {
+    assert.deepEqual(listEnterAction("- elma"), { kind: "continue", marker: "- " });
+    assert.deepEqual(listEnterAction("1. adım"), { kind: "continue", marker: "2. " });
+    assert.deepEqual(listEnterAction("3) x"), { kind: "continue", marker: "4) " });
+    assert.deepEqual(listEnterAction("- [x] iş"), { kind: "continue", marker: "- [ ] " });
+    assert.deepEqual(listEnterAction("  - iç"), { kind: "continue", marker: "  - " });
+  });
+  it("boş öğe: çık veya girinti azalt", () => {
+    assert.deepEqual(listEnterAction("- "), { kind: "exit" });
+    assert.deepEqual(listEnterAction("-"), { kind: "exit" });
+    assert.deepEqual(listEnterAction("  - "), { kind: "outdent" });
+  });
+  it("liste dışı ve sürüm numarası etkilenmez", () => {
+    assert.deepEqual(listEnterAction("düz yazı").kind, "none");
+    assert.deepEqual(listEnterAction("1.2.3").kind, "none");
   });
 });
 
