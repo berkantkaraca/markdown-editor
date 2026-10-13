@@ -643,9 +643,18 @@ function resetMermaid(root: HTMLElement) {
   });
 }
 
+let lastMermaidError = "";
+let lastMermaidErrorTime = 0;
+
 async function runMermaid(root: HTMLElement) {
   const nodes = Array.from(root.querySelectorAll("div.mermaid:not([data-done])"));
   if (nodes.length === 0) {
+    return;
+  }
+  // Görünür olmayan kaptaki (display:none) diyagramlar atlanır:
+  // getBBox gizli SVG'de patlar; görünür olunca sonraki render dener.
+  const visible = nodes.filter((node) => (node as HTMLElement).offsetParent !== null);
+  if (visible.length === 0) {
     return;
   }
   try {
@@ -654,30 +663,43 @@ async function runMermaid(root: HTMLElement) {
       theme: isDarkTheme() ? "dark" : "default",
       securityLevel: "strict",
     });
-    for (const node of nodes) {
+    for (const node of visible) {
       const el = node as HTMLElement;
       el.textContent = el.dataset.source ?? el.textContent ?? "";
     }
-    await mermaid.run({ nodes: nodes.map((n) => n as HTMLElement) });
-    nodes.forEach((node) => {
+    await mermaid.run({ nodes: visible.map((n) => n as HTMLElement) });
+    visible.forEach((node) => {
       (node as HTMLElement).dataset.done = "1";
     });
   } catch (err: any) {
-    nodes.forEach((node) => (node as HTMLElement).classList.add("mermaid-err"));
-    vscode.postMessage({
-      proto: PROTO,
-      type: "error",
-      message: `Mermaid çizilemedi: ${err?.message ?? err}`,
+    const message = `Mermaid çizilemedi: ${err?.message ?? err}`;
+    visible.forEach((node) => {
+      const el = node as HTMLElement;
+      // Kaynak metin görünür kalsın ama aynı hatayı her render'da tekrar deneme
+      el.dataset.done = "1";
+      el.classList.add("mermaid-err");
     });
+    const now = Date.now();
+    if (message !== lastMermaidError || now - lastMermaidErrorTime > 5000) {
+      lastMermaidError = message;
+      lastMermaidErrorTime = now;
+      vscode.postMessage({
+        proto: PROTO,
+        type: "error",
+        message,
+      });
+    }
   }
 }
 
 function refreshMermaidTheme() {
-  for (const root of [liveRoot, readingRoot, splitRoot]) {
-    if (root.querySelector("div.mermaid")) {
-      resetMermaid(root);
-      void runMermaid(root);
-    }
+  // Yalnızca görünen kök çizilir: gizli kapta getBBox patlar.
+  // Gizli kökler moda geçilince zaten yeniden render edilir.
+  const root =
+    mode === "live" ? liveRoot : mode === "reading" ? readingRoot : mode === "split" ? splitRoot : null;
+  if (root && root.querySelector("div.mermaid")) {
+    resetMermaid(root);
+    void runMermaid(root);
   }
 }
 
