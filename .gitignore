@@ -1,7 +1,10 @@
 node_modules/
 dist/
+dist-test/
 media/webview.js
 media/webview.js.map
+media/katex.css
+media/fonts/
 *.vsix
 out/
 # Yapıştırılan görseller (kullanıcı içeriği, repoya girmez)

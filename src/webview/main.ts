@@ -1,6 +1,9 @@
 import MarkdownIt from "markdown-it";
 import taskLists from "markdown-it-task-lists";
 import hljs from "highlight.js";
+import katex from "katex";
+import texmath from "markdown-it-texmath";
+import mermaid from "mermaid";
 import hljsDarkTheme from "highlight.js/styles/vs2015.css";
 import hljsLightTheme from "highlight.js/styles/vs.css";
 import { EditorState, Compartment } from "@codemirror/state";
@@ -9,6 +12,19 @@ import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { markdown } from "@codemirror/lang-markdown";
 import { oneDark } from "@codemirror/theme-one-dark";
 import { search, searchKeymap, highlightSelectionMatches } from "@codemirror/search";
+import {
+  buildFindRegex as makeFindRegex,
+  togglePrefix,
+  toggleTaskLine,
+  toggleHeadingLine,
+  isParaLike,
+  joinKeptLines,
+  parseWikilink,
+  isTableBlock,
+  editTable,
+  parseFrontmatter,
+  renderFrontmatterHtml,
+} from "../shared/md-utils";
 
 declare function acquireVsCodeApi(): {
   postMessage(msg: any): void;
@@ -17,6 +33,9 @@ declare function acquireVsCodeApi(): {
 };
 
 const vscode = acquireVsCodeApi();
+
+// Webview <-> extension mesaj protokolü sürümü
+const PROTO = 1;
 
 // ---------- markdown-it ----------
 const md = new MarkdownIt({
@@ -36,6 +55,25 @@ const md = new MarkdownIt({
   },
 });
 md.use(taskLists as any, { enabled: true, label: true, labelAfter: true });
+md.use(texmath as any, {
+  engine: katex,
+  delimiters: "dollars",
+  katexOptions: { strict: false, throwOnError: false },
+});
+
+// ```mermaid blokları: kod yerine diyagram kabı üret (çizim runMermaid'de)
+const defaultFence = md.renderer.rules.fence;
+md.renderer.rules.fence = (tokens, idx, options, env, self) => {
+  const info = (tokens[idx].info || "").trim().split(/\s+/)[0].toLowerCase();
+  if (info === "mermaid") {
+    const code = tokens[idx].content;
+    return `<div class="mermaid" data-source="${escapeAttr(code)}">${md.utils.escapeHtml(code)}</div>`;
+  }
+  if (defaultFence) {
+    return defaultFence(tokens, idx, options, env, self);
+  }
+  return self.renderToken(tokens, idx, options);
+};
 
 // ---------- state ----------
 type Mode = "source" | "live" | "split" | "reading";
@@ -90,13 +128,14 @@ function escapeAttr(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
 }
 
-// [[Sayfa]] ve [[Sayfa|Etiket]] -> tıklanabilir wiki linki
+// [[...]] -> tıklanabilir wiki linki (etiket/çapa shared parse ile)
 function renderWikilinks(src: string): string {
-  return src.replace(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g, (_m, p1: string, p2: string) => {
-    const name = String(p1).trim();
-    const label = (p2 ?? name).trim();
-    const safeLabel = md.utils.escapeHtml(label);
-    return `<a data-wikilink="${escapeAttr(name)}" href="#">${safeLabel}</a>`;
+  return src.replace(/\[\[([^\]]+)\]\]/g, (m: string, inner: string) => {
+    const p = parseWikilink(inner);
+    if (!p) {
+      return m;
+    }
+    return `<a data-wikilink="${escapeAttr(inner)}" href="#">${md.utils.escapeHtml(p.label)}</a>`;
   });
 }
 
@@ -106,6 +145,8 @@ function renderBlockHtml(source: string): string {
 
 function computeBlocks(text: string): Block[] {
   const lines = text.split("\n");
+  const fm = parseFrontmatter(text);
+  const fmEnd = fm ? fm.endLine : 0;
   const tokens = md.parse(text, {});
   const ranges: Array<[number, number]> = [];
   for (const tok of tokens) {
@@ -128,9 +169,20 @@ function computeBlocks(text: string): Block[] {
       merged.push([...r] as [number, number]);
     }
   }
+  // Ön madde aralığındaki tokenları at, kısmi çakışmayı kırp
+  const bodyRanges: Array<[number, number]> = [];
+  for (const [s, e] of merged) {
+    if (e <= fmEnd) {
+      continue;
+    }
+    bodyRanges.push([Math.max(s, fmEnd), e]);
+  }
   // Token üretmeyen boş satır aralarını da "boş blok" olarak ekle ki tıklanıp yazılabilsin
   const result: Block[] = [];
-  let cursor = 0;
+  if (fm) {
+    result.push({ startLine: 0, endLine: fmEnd, source: fm.raw, html: renderFrontmatterHtml(fm) });
+  }
+  let cursor = fmEnd;
   const pushGap = (s: number, e: number) => {
     if (e > s) {
       const source = lines.slice(s, e).join("\n");
@@ -139,7 +191,7 @@ function computeBlocks(text: string): Block[] {
       result.push({ startLine: s, endLine: e, source, html });
     }
   };
-  for (const [s, e] of merged) {
+  for (const [s, e] of bodyRanges) {
     pushGap(cursor, s);
     const source = lines.slice(s, e).join("\n");
     result.push({ startLine: s, endLine: e, source, html: renderBlockHtml(source) });
@@ -164,7 +216,7 @@ function updateWordCount() {
 }
 
 const sendEdit = debounce((text: string) => {
-  vscode.postMessage({ type: "edit", text });
+  vscode.postMessage({ proto: PROTO, type: "edit", text });
 }, 250);
 
 function setTextFromWebview(newText: string) {
@@ -298,11 +350,19 @@ function applyLineNumbers() {
   cmView.dispatch({ effects: lineNumCompartment.reconfigure(lineNumbersOn ? lineNumbers() : []) });
 }
 
-// ---------- Canlı mod ----------
+// ---------- Canlı mod (artımlı render: büyük dosyalarda takılmaz) ----------
+let liveRenderId = 0;
+const LIVE_CHUNK = 150;
+
 function renderLive() {
   blocks = computeBlocks(currentText);
+  if (editingIndex !== null && !blocks[editingIndex]) {
+    editingIndex = null;
+  }
+  const id = ++liveRenderId;
   liveRoot.innerHTML = "";
-  blocks.forEach((b, i) => {
+  const appendBlock = (i: number) => {
+    const b = blocks[i];
     if (i === editingIndex) {
       liveRoot.appendChild(buildEditBox(b, i));
     } else {
@@ -313,12 +373,41 @@ function renderLive() {
       wireRenderedBlock(div, i);
       liveRoot.appendChild(div);
     }
-  });
-  postProcessImages(liveRoot);
-  if (findOpen) {
-    updateFind();
+  };
+  const finish = () => {
+    if (id !== liveRenderId) {
+      return;
+    }
+    postProcessImages(liveRoot);
+    if (findOpen) {
+      updateFind();
+    }
+    void runMermaid(liveRoot);
+    refreshBar();
+  };
+  if (blocks.length <= 400) {
+    for (let i = 0; i < blocks.length; i++) {
+      appendBlock(i);
+    }
+    finish();
+    return;
   }
-  refreshBar();
+  let i = 0;
+  const step = () => {
+    if (id !== liveRenderId) {
+      return;
+    }
+    const end = Math.min(i + LIVE_CHUNK, blocks.length);
+    for (; i < end; i++) {
+      appendBlock(i);
+    }
+    if (i < blocks.length) {
+      requestAnimationFrame(step);
+    } else {
+      finish();
+    }
+  };
+  requestAnimationFrame(step);
 }
 
 function buildEditBox(b: Block, index: number): HTMLElement {
@@ -373,6 +462,38 @@ function buildEditBox(b: Block, index: number): HTMLElement {
     }, 150);
   });
   wrapper.appendChild(ta);
+  // Tablo bloğunda satır/sütun işlem çubuğu
+  if (isTableBlock(ta.value)) {
+    const bar = document.createElement("div");
+    bar.className = "tablebar";
+    const ops: Array<[TableOp, string, string]> = [
+      ["add-row", "+Satır", "Satır ekle"],
+      ["del-row", "−Satır", "Satır sil"],
+      ["add-col", "+Sütun", "Sütun ekle"],
+      ["del-col", "−Sütun", "Sütun sil"],
+    ];
+    for (const [op, label, title] of ops) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.textContent = label;
+      b.title = title;
+      b.addEventListener("mousedown", (ev) => ev.preventDefault());
+      b.addEventListener("click", (ev) => {
+        ev.preventDefault();
+        const out = editTable(ta.value, op);
+        if (out === null) {
+          return;
+        }
+        recordHist(true);
+        ta.value = out;
+        ta.focus();
+        autoGrow(ta);
+        replaceBlockSource(index, out);
+      });
+      bar.appendChild(b);
+    }
+    wrapper.insertBefore(bar, ta);
+  }
   requestAnimationFrame(() => {
     // Ölçüm DOM'a eklendikten sonra yapılmalı, yoksa yükseklik yanlış çıkar
     autoGrow(ta);
@@ -440,12 +561,12 @@ function wireRenderedBlock(div: HTMLElement, index: number) {
       e.stopPropagation();
       const wiki = a.getAttribute("data-wikilink");
       if (wiki) {
-        vscode.postMessage({ type: "open-wikilink", name: wiki });
+        vscode.postMessage({ proto: PROTO, type: "open-wikilink", name: wiki });
         return;
       }
       const href = a.getAttribute("href") || "";
       if (href) {
-        vscode.postMessage({ type: "open-link", href });
+        vscode.postMessage({ proto: PROTO, type: "open-link", href });
       }
     });
   });
@@ -517,9 +638,19 @@ function renderSplit() {
   });
 }
 
-// Okuma ve split önizlemesi ortak render
+// Tam metin render (ön madde varsa tablo olarak öne alınır)
+function renderFullWithFm(text: string): string {
+  const fm = parseFrontmatter(text);
+  if (!fm) {
+    return md.render(renderWikilinks(text));
+  }
+  const rest = text.split("\n").slice(fm.endLine).join("\n");
+  return renderFrontmatterHtml(fm) + md.render(renderWikilinks(rest));
+}
+
+// Okuma + split önizlemesi ortak render
 function renderPreviewInto(root: HTMLElement) {
-  root.innerHTML = md.render(renderWikilinks(currentText));
+  root.innerHTML = renderFullWithFm(currentText);
   root.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
     (cb as HTMLInputElement).disabled = false;
     cb.addEventListener("change", (e) => {
@@ -534,12 +665,12 @@ function renderPreviewInto(root: HTMLElement) {
       e.stopPropagation();
       const wiki = a.getAttribute("data-wikilink");
       if (wiki) {
-        vscode.postMessage({ type: "open-wikilink", name: wiki });
+        vscode.postMessage({ proto: PROTO, type: "open-wikilink", name: wiki });
         return;
       }
       const href = a.getAttribute("href") || "";
       if (href) {
-        vscode.postMessage({ type: "open-link", href });
+        vscode.postMessage({ proto: PROTO, type: "open-link", href });
       }
     });
   });
@@ -547,6 +678,7 @@ function renderPreviewInto(root: HTMLElement) {
   if (findOpen) {
     updateFind();
   }
+  void runMermaid(root);
 }
 
 // Okuma modunda checkbox: n'inci task'ı bulup çevir (sıra tabanlı)
@@ -567,6 +699,51 @@ function toggleTaskInFullText(checked: boolean, el: HTMLInputElement, root: HTML
   recordHist(true);
   setTextFromWebview(next);
   syncCodeMirrorFromText();
+}
+
+// ---------- Mermaid ----------
+function resetMermaid(root: HTMLElement) {
+  root.querySelectorAll("div.mermaid[data-done]").forEach((node) => {
+    delete (node as HTMLElement).dataset.done;
+  });
+}
+
+async function runMermaid(root: HTMLElement) {
+  const nodes = Array.from(root.querySelectorAll("div.mermaid:not([data-done])"));
+  if (nodes.length === 0) {
+    return;
+  }
+  try {
+    mermaid.initialize({
+      startOnLoad: false,
+      theme: isDarkTheme() ? "dark" : "default",
+      securityLevel: "strict",
+    });
+    for (const node of nodes) {
+      const el = node as HTMLElement;
+      el.textContent = el.dataset.source ?? el.textContent ?? "";
+    }
+    await mermaid.run({ nodes: nodes.map((n) => n as HTMLElement) });
+    nodes.forEach((node) => {
+      (node as HTMLElement).dataset.done = "1";
+    });
+  } catch (err: any) {
+    nodes.forEach((node) => (node as HTMLElement).classList.add("mermaid-err"));
+    vscode.postMessage({
+      proto: PROTO,
+      type: "error",
+      message: `Mermaid çizilemedi: ${err?.message ?? err}`,
+    });
+  }
+}
+
+function refreshMermaidTheme() {
+  for (const root of [liveRoot, readingRoot, splitRoot]) {
+    if (root.querySelector("div.mermaid")) {
+      resetMermaid(root);
+      void runMermaid(root);
+    }
+  }
 }
 
 // ---------- Görseller ----------
@@ -590,7 +767,7 @@ function postProcessImages(root: HTMLElement) {
     }
   });
   if (missing.length > 0) {
-    vscode.postMessage({ type: "resolve-imgs", paths: missing });
+    vscode.postMessage({ proto: PROTO, type: "resolve-imgs", paths: missing });
   }
 }
 
@@ -616,15 +793,15 @@ function getImageFromClipboard(e: ClipboardEvent): File | null {
 
 function readAndSendImage(file: File, cursor: number) {
   if (file.size > 15 * 1024 * 1024) {
-    vscode.postMessage({ type: "error", message: "Görsel 15 MB'tan büyük, yapıştırılamadı." });
+    vscode.postMessage({ proto: PROTO, type: "error", message: "Görsel 15 MB'tan büyük, yapıştırılamadı." });
     return;
   }
   const r = new FileReader();
   r.onload = () => {
     pendingPaste = true;
-    vscode.postMessage({ type: "paste-image", dataUrl: String(r.result || ""), cursor });
+    vscode.postMessage({ proto: PROTO, type: "paste-image", dataUrl: String(r.result || ""), cursor });
   };
-  r.onerror = () => vscode.postMessage({ type: "error", message: "Görsel okunamadı." });
+  r.onerror = () => vscode.postMessage({ proto: PROTO, type: "error", message: "Görsel okunamadı." });
   r.readAsDataURL(file);
 }
 
@@ -681,7 +858,7 @@ function recordHist(force = false) {
 function applyHistText(t: string) {
   currentText = t;
   updateWordCount();
-  vscode.postMessage({ type: "edit", text: t });
+  vscode.postMessage({ proto: PROTO, type: "edit", text: t });
   editingIndex = null;
   syncCodeMirrorFromText();
   if (mode === "live") {
@@ -772,39 +949,7 @@ function cmInsert(text: string, selAnchor?: number, selHead?: number) {
   cmView.focus();
 }
 
-const togglePrefix =
-  (p: string) =>
-  (t: string): string | null => {
-    if (t.trim() === "") {
-      return null;
-    }
-    return t.startsWith(p) ? t.slice(p.length) : p + t;
-  };
-
-function toggleTaskLine(t: string): string | null {
-  if (t.trim() === "") {
-    return null;
-  }
-  const m = t.match(/^(\s*)(- \[[ xX]\] |- )(.*)$/);
-  if (!m) {
-    return `- [ ] ${t}`;
-  }
-  if (m[2] === "- ") {
-    return `${m[1]}- [ ] ${m[3]}`;
-  }
-  return `${m[1]}- ${m[3]}`;
-}
-
-function toggleHeadingLine(t: string): string | null {
-  if (t.trim() === "") {
-    return null;
-  }
-  const m = t.match(/^(#{1,6}\s+)/);
-  if (m) {
-    return t.slice(m[0].length);
-  }
-  return `## ${t}`;
-}
+// (satır aç-kapa yardımcıları shared/md-utils içinden gelir)
 
 function taWrap(before: string, after: string, placeholder: string) {
   const t = getTarget();
@@ -927,7 +1072,50 @@ function insertAtCursor(text: string, selAnchor?: number, selHead?: number) {
   }
 }
 
+import type { TableOp } from "../shared/md-utils";
+
 const TABLE_TEMPLATE = "\n| Başlık 1 | Başlık 2 |\n| --- | --- |\n|  |  |\n";
+
+function tableOp(op: TableOp) {
+  const t = getTarget();
+  if (!t) {
+    return;
+  }
+  if (t.kind === "cm") {
+    if (!cmView) {
+      return;
+    }
+    const doc = cmView.state.doc;
+    const cur = doc.lineAt(cmView.state.selection.main.head).number;
+    let s = cur;
+    let e = cur;
+    const isT = (n: number) => n >= 1 && n <= doc.lines && doc.line(n).text.trim().startsWith("|");
+    while (isT(s - 1)) {
+      s--;
+    }
+    while (isT(e + 1)) {
+      e++;
+    }
+    const src = doc.sliceString(doc.line(s).from, doc.line(e).to);
+    const out = editTable(src, op);
+    if (out === null) {
+      return;
+    }
+    recordHist(true);
+    cmView.dispatch({ changes: { from: doc.line(s).from, to: doc.line(e).to, insert: out } });
+    cmView.focus();
+    return;
+  }
+  const out = editTable(t.el.value, op);
+  if (out === null) {
+    return;
+  }
+  recordHist(true);
+  t.el.value = out;
+  t.el.focus();
+  autoGrow(t.el);
+  replaceBlockSource(t.index, out);
+}
 
 function runFormat(cmd: string) {
   if (cmd === "undo") {
@@ -984,6 +1172,18 @@ function runFormat(cmd: string) {
     }
     case "image":
       insertAtCursor("![açıklama](görsel.png)", 2, 10);
+      break;
+    case "row-add":
+      tableOp("add-row");
+      break;
+    case "row-del":
+      tableOp("del-row");
+      break;
+    case "col-add":
+      tableOp("add-col");
+      break;
+    case "col-del":
+      tableOp("del-col");
       break;
   }
   refreshBar();
@@ -1129,38 +1329,7 @@ document.addEventListener("keydown", (e) => {
   renderLive();
 });
 
-// Silinen aralıklar yüzünden komşu paragraflar bitişmesin diye ayraç koru.
-// (Tablo/liste/başlık/kod gibi yapısal satırlara dokunulmaz.)
-function isParaLike(t: string): boolean {
-  return !/^\s*(#{1,6}\s+|>\s?|\||`{3,}|~{3,}|\s*[-*+]\s+|\s*\d+[.)]\s+|\s{4,}|\t)/.test(t);
-}
-
-function joinKeptLines(lines: string[], removed: boolean[]): string {
-  const out: string[] = [];
-  let removedBlankSince = false;
-  for (let i = 0; i < lines.length; i++) {
-    if (removed[i]) {
-      if (lines[i].trim() === "") {
-        removedBlankSince = true;
-      }
-      continue;
-    }
-    const cur = lines[i];
-    if (
-      out.length > 0 &&
-      removedBlankSince &&
-      cur.trim() !== "" &&
-      out[out.length - 1].trim() !== "" &&
-      isParaLike(out[out.length - 1]) &&
-      isParaLike(cur)
-    ) {
-      out.push("");
-    }
-    out.push(cur);
-    removedBlankSince = false;
-  }
-  return out.join("\n");
-}
+// (joinKeptLines / isParaLike shared/md-utils içinden gelir)
 
 // ---------- Bulma çubuğu (Canlı/Okuma/Split önizleme) ----------
 const findbar = $("findbar");
@@ -1219,19 +1388,11 @@ function clearFindMarks() {
 }
 
 function buildFindRegex(): RegExp | null {
-  const q = findInput.value;
-  if (!q) {
-    return null;
-  }
-  try {
-    let src = findRegex ? q : q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    if (findWord) {
-      src = `\\b(?:${src})\\b`;
-    }
-    return new RegExp(src, findCase ? "g" : "gi");
-  } catch {
-    return null; // hatalı ifade
-  }
+  return makeFindRegex(findInput.value, {
+    caseSensitive: findCase,
+    wholeWord: findWord,
+    regex: findRegex,
+  });
 }
 
 function updateFind() {
@@ -1495,6 +1656,7 @@ document.addEventListener("keydown", (e) => {
 new MutationObserver(
   debounce(() => {
     applyHljsTheme();
+    refreshMermaidTheme();
     if (cmView) {
       cmView.dispatch({
         effects: themeCompartment.reconfigure(isDarkTheme() ? oneDark : []),
@@ -1504,9 +1666,39 @@ new MutationObserver(
   }, 200)
 ).observe(document.body, { attributes: true, attributeFilter: ["class"] });
 
+// Satıra kaydır + vurgula (outline / wikilink# navigasyonu)
+function flashLine(line: number) {
+  if (mode === "live") {
+    let idx = blocks.findIndex((b) => line >= b.startLine && line < b.endLine);
+    if (idx < 0) {
+      idx = blocks.length - 1;
+    }
+    const div = liveRoot.querySelector(`div.block[data-index="${idx}"]`);
+    if (div) {
+      div.scrollIntoView({ block: "center" });
+      div.classList.remove("flash");
+      void (div as HTMLElement).offsetWidth;
+      div.classList.add("flash");
+      setTimeout(() => div.classList.remove("flash"), 1600);
+    }
+    return;
+  }
+  const host = mode === "reading" ? readingWrap : mode === "split" ? splitPreview : null;
+  if (host) {
+    const total = currentText === "" ? 1 : currentText.split("\n").length;
+    const max = host.scrollHeight - host.clientHeight;
+    if (max > 0) {
+      host.scrollTop = (Math.min(line, total - 1) / Math.max(1, total - 1)) * max;
+    }
+  }
+}
+
 // ---------- Extension mesajları ----------
 window.addEventListener("message", (event) => {
   const msg = event.data;
+  if (msg?.proto !== undefined && msg.proto !== PROTO) {
+    return; // bilinmeyen protokol sürümü
+  }
   switch (msg?.type) {
     case "update": {
       const text: string = msg.text ?? "";
@@ -1551,8 +1743,11 @@ window.addEventListener("message", (event) => {
       }
       break;
     }
-    case "img-uris": {
-      const map = (msg.map ?? {}) as Record<string, string>;
+    case "reveal-line": {
+      flashLine(Math.max(0, Number(msg.line) || 0));
+      break;
+    }
+    case "img-uris": {      const map = (msg.map ?? {}) as Record<string, string>;
       let changed = false;
       for (const k of Object.keys(map)) {
         if (imgUriCache.get(k) !== map[k]) {
@@ -1600,5 +1795,5 @@ window.addEventListener("message", (event) => {
   applyHljsTheme();
   setMode(mode);
   updateWordCount();
-  vscode.postMessage({ type: "ready" });
+  vscode.postMessage({ proto: PROTO, type: "ready" });
 })();

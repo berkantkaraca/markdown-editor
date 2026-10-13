@@ -12,10 +12,14 @@
   "engines": {
     "vscode": "^1.85.0"
   },
-  "categories": ["Other"],
+  "categories": [
+    "Other"
+  ],
   "activationEvents": [
     "onLanguage:markdown",
-    "onCustomEditor:karaca.mdEditor"
+    "onCustomEditor:karaca.mdEditor",
+    "onView:karacaOutline",
+    "onView:karacaBacklinks"
   ],
   "main": "./dist/extension.js",
   "contributes": {
@@ -23,10 +27,20 @@
       {
         "viewType": "karaca.mdEditor",
         "displayName": "Karaca MD Editor",
-        "selector": [{ "filenamePattern": "*.md" }],
+        "selector": [
+          {
+            "filenamePattern": "*.md"
+          }
+        ],
         "priority": "default"
       }
     ],
+    "views": {
+      "explorer": [
+        { "id": "karacaOutline", "name": "Karaca İçindekiler" },
+        { "id": "karacaBacklinks", "name": "Karaca Geri Bağlantılar" }
+      ]
+    },
     "commands": [
       {
         "command": "karaca-md.openLive",
@@ -37,12 +51,30 @@
         "command": "karaca-md.showSource",
         "title": "Karaca MD: Varsayılan Metin Editörüyle Aç",
         "category": "Karaca"
+      },
+      {
+        "command": "karaca-md.newNote",
+        "title": "Karaca MD: Hızlı Not Oluştur",
+        "category": "Karaca"
+      },
+      {
+        "command": "karaca-md.dailyNote",
+        "title": "Karaca MD: Günlük Notu Aç",
+        "category": "Karaca"
       }
     ],
     "menus": {
       "commandPalette": [
-        { "command": "karaca-md.openLive", "when": "resourceLangId == markdown" },
-        { "command": "karaca-md.showSource", "when": "resourceLangId == markdown" }
+        {
+          "command": "karaca-md.openLive",
+          "when": "resourceLangId == markdown"
+        },
+        {
+          "command": "karaca-md.showSource",
+          "when": "resourceLangId == markdown"
+        },
+        { "command": "karaca-md.newNote" },
+        { "command": "karaca-md.dailyNote" }
       ]
     },
     "configuration": {
@@ -50,7 +82,12 @@
       "properties": {
         "karacaMd.defaultMode": {
           "type": "string",
-          "enum": ["live", "source", "split", "reading"],
+          "enum": [
+            "live",
+            "source",
+            "split",
+            "reading"
+          ],
           "default": "live",
           "description": "Markdown dosyası açıldığında varsayılan mod."
         },
@@ -71,7 +108,8 @@
     "compile": "node esbuild.js",
     "watch": "node esbuild.js --watch",
     "vscode:prepublish": "node esbuild.js --production",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "test": "tsc -p tsconfig.test.json && node --test \"dist-test/test/**/*.test.js\""
   },
   "devDependencies": {
     "@types/markdown-it": "^14.1.2",
@@ -90,7 +128,10 @@
     "@codemirror/theme-one-dark": "^6.1.2",
     "@codemirror/view": "^6.33.0",
     "highlight.js": "^11.9.0",
+    "katex": "^0.19.0",
     "markdown-it": "^14.1.0",
-    "markdown-it-task-lists": "^2.1.1"
+    "markdown-it-task-lists": "^2.1.1",
+    "markdown-it-texmath": "^1.0.0",
+    "mermaid": "^10.9.5"
   }
 }

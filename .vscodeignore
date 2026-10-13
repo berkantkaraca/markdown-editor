@@ -3,6 +3,11 @@
 src/**
 esbuild.js
 tsconfig.json
+tsconfig.test.json
+test/**
+dist-test/**
 sample.md
+deneme.md
+assets/**
 **/*.map
 .vscodeignore

@@ -22,12 +22,20 @@ Ekstralar:
 - Kaynak modda `Ctrl+F` ile ara/değiştir (temaya uygun panel).
 - Canlı/Okuma/Split önizlemede `Ctrl+F` ile bulma çubuğu: büyük/küçük harf (Aa), tüm sözcük, normal ifade, sayaç, `Enter` ile gezinme; `≡` ile Değiştir/Tümü (kaynak metinde, `$1` destekli).
 - Canlı modda birden çok bloğu seçip `Delete` ile toplu silme.
+- Matematik (KaTeX): satır içi `$...$`, blok `$$...$$`.
+- Mermaid diyagramları (```mermaid blokları, koyu/açık temaya uyumlu).
+- Ön madde (frontmatter) tablo görünümü; tıklayınca ham hali düzenlenir.
+- Tablo düzenleyici: canlı blok üstünde ve biçim çubuğunda satır/sütun ekle-sil.
+- `[[Not#Başlık]]`, `[[Not|Etiket]]` ve aynı-dosya `#başlık` linklerinde başlığa kaydırma.
+- Gezgin panelinde **Karaca İçindekiler** (tıkla-satırına-git) ve **Karaca Geri Bağlantılar**.
+- Komutlar: `Karaca MD: Hızlı Not Oluştur`, `Karaca MD: Günlük Notu Aç`.
 
 ## Çalıştırma (geliştirme)
 
 ```powershell
 npm install
 npm run compile
+npm test            # birim testler (node --test, zero-dep)
 # sonra F5 ile Extension Development Host aç, bir .md dosyası aç
 ```
 
@@ -35,6 +43,8 @@ npm run compile
 
 - `Karaca MD: Canlı Editörde Aç`
 - `Karaca MD: Varsayılan Metin Editörüyle Aç`
+- `Karaca MD: Hızlı Not Oluştur`
+- `Karaca MD: Günlük Notu Aç`
 
 ## Ayarlar
 

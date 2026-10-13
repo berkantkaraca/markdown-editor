@@ -147,7 +147,26 @@ body {
 #formatbar button:hover:not(:disabled) { background: var(--md-hover); border-color: var(--md-border); }
 #formatbar button:disabled { opacity: .35; cursor: default; }
 #formatbar .fsep { width: 1px; height: 18px; background: var(--md-border); margin: 0 4px; }
-/* (seamless editör boyu içerikten gelir, ayrı min-height yok) */
+.block.flash { animation: mdflash 1.5s ease-out; }
+@keyframes mdflash {
+  0% { background: rgba(234, 179, 8, .28); }
+  100% { background: transparent; }
+}
+/* Tablo işlem çubuğu (canlı blok üstü) */
+.tablebar { display: flex; gap: 4px; margin-bottom: 4px; }
+.tablebar button { border: 1px solid var(--md-border); background: var(--md-hover); color: inherit; border-radius: 5px; padding: 2px 8px; font-size: 12px; cursor: pointer; }
+.tablebar button:hover { background: var(--vscode-button-secondaryBackground, #3a3d41); }
+/* Mermaid */
+.mermaid { background: var(--md-code-bg); border: 1px solid var(--md-border); border-radius: 8px; padding: 12px; margin: .8em 0; text-align: center; overflow-x: auto; }
+.mermaid svg { max-width: 100%; height: auto; }
+.mermaid-err { border: 1px dashed var(--vscode-errorForeground, #f48771); }
+/* Ön madde */
+.frontmatter { border: 1px solid var(--md-border); border-radius: 8px; padding: 8px 12px; margin: .6em 0; background: var(--md-hover); font-size: 12.5px; cursor: text; }
+.fm-row { display: flex; gap: 10px; padding: 1px 0; }
+.fm-key { opacity: .6; min-width: 90px; font-family: var(--vscode-editor-font-family, monospace); }
+.fm-val { overflow-wrap: anywhere; }
+/* KaTeX taşmayı engelle */
+.katex-display { overflow-x: auto; overflow-y: hidden; padding: .4em 0; }
 
 /* Bulma çubuğu (Canlı/Okuma/Split önizleme) */
 #findbar { display: flex; flex-direction: column; align-items: stretch; gap: 4px; padding: 6px 12px; border-bottom: 1px solid var(--md-border); background: var(--vscode-editor-background); user-select: none; }

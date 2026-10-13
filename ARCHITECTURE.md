@@ -14,6 +14,8 @@ Tek sekmede markdown düzenleme + görüntüleme yapan VS Code eklentisi.
 | `media/style.css` | Webview stilleri (VS Code tema değişkenleriyle) |
 | `media/webview.js` | Derleme çıktısı (esbuild IIFE, ~1.7 MB: CodeMirror 6 + markdown-it + highlight.js) |
 | `esbuild.js` | Çift derleme: `src/extension.ts` → `dist/` (node), `src/webview/main.ts` → `media/` (browser) |
+| `src/shared/md-utils.ts` | Saf yardımcılar (test edilebilir, DOM/vscode bağımsız) |
+| `test/md-utils.test.ts` | Birim testler (`npm test`) |
 | `sample.md`, `deneme.md` | Deneme dosyaları |
 
 ## Extension host (`src/extension.ts`)
@@ -132,14 +134,17 @@ Tek sekmede markdown düzenleme + görüntüleme yapan VS Code eklentisi.
 
 ## Senkron protokolü
 
+Tüm mesajlarda `proto: 1` alanı vardır; iki taraf da bilmediği sürümü yoksayar.
+
 | Yön | `type` | İçerik |
 |---|---|---|
 | ext → web | `update` | `{ text, isDirty }` (her doküman değişiminde) |
 | ext → web | `config` | `{ defaultMode, wordWrap, lineNumbers }` |
 | ext → web | `img-uris` | `{ map: {src: webviewUri} }` |
+| ext → web | `reveal-line` | `{ line }` (satıra kaydır + vurgula) |
 | web → ext | `ready` | açılış el sıkışması |
 | web → ext | `edit` | tam metin (250 ms debounce'lu) |
-| web → ext | `open-link` / `open-wikilink` | `{ href }` / `{ name }` |
+| web → ext | `open-link` / `open-wikilink` | `{ href }` / `{ name }` (`name`: `Not#Başlık|Etiket` ham hali) |
 | web → ext | `paste-image` | `{ dataUrl, cursor }` |
 | web → ext | `resolve-imgs` | `{ paths[] }` |
 | web → ext | `error` | `{ message }` (kullanıcıya gösterilir) |
@@ -161,6 +166,31 @@ edit kutusunu kapatıp tazeler.
    hatasıdır (microsoft/vscode#330595 vb.); eklenti kodu o aşamada çalışmaz.
    Karşı önlem: pencere başına tek örnek, önbellek temizliği, sekmeyi kapatıp
    yeniden açma.
+
+## V2 ekleri
+
+- **`src/shared/md-utils.ts`**: saf yardımcılar (bulma regex'i, satır aç-kapa,
+  tablo işlemleri, frontmatter, wikilink/başlık çözümleme, mime). `npm test`
+  (`node --test`, sıfır bağımlılık, 27 test) ile doğrulanır.
+- **Matematik**: `markdown-it-texmath` + `katex` (`$`/`$$`). Fontlar derlemede
+  `media/fonts/` altına kopyalanır, CSS'teki `url(fonts/…)` extension tarafında
+  webview URI'sine çevrilip `<style>` olarak gömülür.
+- **Mermaid**: fence kuralı `div.mermaid[data-source]` üretir, `runMermaid`
+  çizer (`securityLevel: strict`); tema değişince kaynaklar geri yüklenip
+  yeniden çizilir.
+- **Ön madde**: `parseFrontmatter` ile ilk blok olur (canlı) veya tam render'ın
+  başına tablo olarak eklenir (okuma/split); düzenleme ham kaynaktan yapılır.
+- **Tablo**: `editTable` (satır/sütun ekle-sil); canlı blok üstü mini çubuk +
+  biçim çubuğu düğmeleri (Kaynak modda imleç çevresindeki tablo bulunur).
+- **Paneller**: Gezgin'de `karacaOutline` (iç içe başlık ağacı, tıkla →
+  `karaca-md.reveal` → `revealLine` → webview'de kaydır+vurgu) ve
+  `karacaBacklinks` (`[[Ad]]` / `](ad.md)` taraması, max 500 dosya, 1 sn
+  debounce). Komutlar: `karaca-md.newNote`, `karaca-md.dailyNote`.
+- **Artımlı render**: 400+ blokta DOM parçalar halinde (`rAF`, 150'şerli)
+  eklenir; `renderId` ile eski tur iptal edilir.
+- **Derleme notları**: `fs.cpSync` bu makinede natif çöküyor — yerine tek-tek
+  kopya (`copyDirSync`). Dev webview derlemesinde sourcemap kapalı (19 MB map
+  esbuild'i çökertüyordu); iki parça ayrı process'te derlenir (`--only=`).
 
 ## Derleme / paketleme / yayınlama
 
