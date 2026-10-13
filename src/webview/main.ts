@@ -8,6 +8,7 @@ import { EditorView, keymap, highlightActiveLine, lineNumbers } from "@codemirro
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { markdown } from "@codemirror/lang-markdown";
 import { oneDark } from "@codemirror/theme-one-dark";
+import { search, searchKeymap, highlightSelectionMatches } from "@codemirror/search";
 
 declare function acquireVsCodeApi(): {
   postMessage(msg: any): void;
@@ -37,7 +38,7 @@ const md = new MarkdownIt({
 md.use(taskLists as any, { enabled: true, label: true, labelAfter: true });
 
 // ---------- state ----------
-type Mode = "source" | "live" | "reading";
+type Mode = "source" | "live" | "split" | "reading";
 let mode: Mode = "live";
 let currentText = "";
 let isDirty = false;
@@ -47,6 +48,10 @@ let blocks: Block[] = [];
 let cmView: EditorView | null = null;
 let cmApplyingExternal = false;
 const languageCompartment = new Compartment();
+const themeCompartment = new Compartment();
+const lineNumCompartment = new Compartment();
+let lineNumbersOn = true;
+let syncingScroll = false;
 
 interface Block {
   startLine: number;
@@ -65,6 +70,10 @@ const readingWrap = $("reading-wrap");
 const liveRoot = $("live-root");
 const readingRoot = $("reading-root");
 const cmHost = $("cm-host");
+const btnSplit = $("btn-split") as HTMLButtonElement;
+const mainRow = $("main-row");
+const splitPreview = $("split-preview");
+const splitRoot = $("split-root");
 const wcEl = $("wordcount");
 const dirtyEl = $("dirty");
 
@@ -174,14 +183,15 @@ function isDarkTheme(): boolean {
 
 function initCodeMirror() {
   const dark = isDarkTheme();
-  const themeExt = dark ? oneDark : [];
   const state = EditorState.create({
     doc: currentText,
     extensions: [
-      lineNumbers(),
+      lineNumCompartment.of(lineNumbers()),
       history(),
       highlightActiveLine(),
-      keymap.of([...defaultKeymap, ...historyKeymap]),
+      keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap]),
+      search({ top: true }),
+      highlightSelectionMatches(),
       markdown(),
       EditorView.domEventHandlers({
         paste: (event, view) => {
@@ -195,7 +205,7 @@ function initCodeMirror() {
         },
       }),
       languageCompartment.of(wordWrap ? EditorView.lineWrapping : []),
-      ...(Array.isArray(themeExt) ? themeExt : [themeExt]),
+      themeCompartment.of(dark ? oneDark : []),
       EditorView.updateListener.of((u) => {
         if (u.docChanged && !cmApplyingExternal) {
           const t = u.state.doc.toString();
@@ -210,6 +220,46 @@ function initCodeMirror() {
     ],
   });
   cmView = new EditorView({ state, parent: cmHost });
+  // Split modda senkron kaydırma: kaynak -> önizleme
+  cmView.scrollDOM.addEventListener("scroll", () => {
+    if (mode !== "split" || syncingScroll || !cmView) {
+      return;
+    }
+    const el = cmView.scrollDOM;
+    const max = el.scrollHeight - el.clientHeight;
+    if (max <= 0) {
+      return;
+    }
+    const pmax = splitPreview.scrollHeight - splitPreview.clientHeight;
+    if (pmax <= 0) {
+      return;
+    }
+    syncingScroll = true;
+    splitPreview.scrollTop = (el.scrollTop / max) * pmax;
+    requestAnimationFrame(() => {
+      syncingScroll = false;
+    });
+  });
+  // Split modda senkron kaydırma: önizleme -> kaynak
+  splitPreview.addEventListener("scroll", () => {
+    if (mode !== "split" || syncingScroll || !cmView) {
+      return;
+    }
+    const pmax = splitPreview.scrollHeight - splitPreview.clientHeight;
+    if (pmax <= 0) {
+      return;
+    }
+    const el = cmView.scrollDOM;
+    const cmMax = el.scrollHeight - el.clientHeight;
+    if (cmMax <= 0) {
+      return;
+    }
+    syncingScroll = true;
+    el.scrollTop = (splitPreview.scrollTop / pmax) * cmMax;
+    requestAnimationFrame(() => {
+      syncingScroll = false;
+    });
+  });
 }
 
 const scheduleLiveRerender = debounce(() => {
@@ -217,6 +267,8 @@ const scheduleLiveRerender = debounce(() => {
     renderLive();
   } else if (mode === "reading") {
     renderReading();
+  } else if (mode === "split") {
+    renderSplit();
   }
 }, 600);
 
@@ -237,6 +289,13 @@ function applyWordWrap() {
     return;
   }
   cmView.dispatch({ effects: languageCompartment.reconfigure(wordWrap ? EditorView.lineWrapping : []) });
+}
+
+function applyLineNumbers() {
+  if (!cmView) {
+    return;
+  }
+  cmView.dispatch({ effects: lineNumCompartment.reconfigure(lineNumbersOn ? lineNumbers() : []) });
 }
 
 // ---------- Canlı mod ----------
@@ -415,18 +474,27 @@ function toggleTaskCheckbox(blockIndex: number, checked: boolean) {
   }
 }
 
-// ---------- Okuma modu ----------
+// ---------- Okuma + split önizlemesi ----------
 function renderReading() {
-  readingRoot.innerHTML = md.render(renderWikilinks(currentText));
-  readingRoot.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
+  renderPreviewInto(readingRoot);
+}
+
+function renderSplit() {
+  renderPreviewInto(splitRoot);
+}
+
+// Okuma ve split önizlemesi ortak render
+function renderPreviewInto(root: HTMLElement) {
+  root.innerHTML = md.render(renderWikilinks(currentText));
+  root.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
     (cb as HTMLInputElement).disabled = false;
     cb.addEventListener("change", (e) => {
       e.stopPropagation();
-      toggleTaskInFullText((cb as HTMLInputElement).checked, cb as HTMLInputElement);
+      toggleTaskInFullText((cb as HTMLInputElement).checked, cb as HTMLInputElement, root);
     });
     cb.addEventListener("click", (e) => e.stopPropagation());
   });
-  readingRoot.querySelectorAll("a").forEach((a) => {
+  root.querySelectorAll("a").forEach((a) => {
     a.addEventListener("click", (e) => {
       e.preventDefault();
       e.stopPropagation();
@@ -441,12 +509,12 @@ function renderReading() {
       }
     });
   });
-  postProcessImages(readingRoot);
+  postProcessImages(root);
 }
 
 // Okuma modunda checkbox: n'inci task'ı bulup çevir (sıra tabanlı)
-function toggleTaskInFullText(checked: boolean, el: HTMLInputElement) {
-  const boxes = Array.from(readingRoot.querySelectorAll('input[type="checkbox"]'));
+function toggleTaskInFullText(checked: boolean, el: HTMLInputElement, root: HTMLElement = readingRoot) {
+  const boxes = Array.from(root.querySelectorAll('input[type="checkbox"]'));
   const n = boxes.indexOf(el);
   if (n < 0) {
     return;
@@ -540,7 +608,7 @@ const fmtButtons = Array.from(formatbar.querySelectorAll("button[data-cmd]")) as
 type Target = { kind: "cm" } | { kind: "ta"; el: HTMLTextAreaElement; index: number } | null;
 
 function getTarget(): Target {
-  if (mode === "source" && cmView) {
+  if ((mode === "source" || mode === "split") && cmView) {
     return { kind: "cm" };
   }
   if (mode === "live" && editingIndex !== null) {
@@ -936,15 +1004,21 @@ function setMode(m: Mode) {
   for (const [btn, key] of [
     [btnSource, "source"],
     [btnLive, "live"],
+    [btnSplit, "split"],
     [btnReading, "reading"],
   ] as const) {
     btn.classList.toggle("active", key === m);
   }
-  sourceWrap.classList.toggle("hidden", m !== "source");
+  mainRow.classList.toggle("hidden", m !== "source" && m !== "split");
+  sourceWrap.classList.toggle("hidden", m !== "source" && m !== "split");
+  splitPreview.classList.toggle("hidden", m !== "split");
   liveWrap.classList.toggle("hidden", m !== "live");
   readingWrap.classList.toggle("hidden", m !== "reading");
-  if (m === "source") {
+  if (m === "source" || m === "split") {
     syncCodeMirrorFromText();
+    if (m === "split") {
+      renderSplit();
+    }
     requestAnimationFrame(() => cmView?.focus());
   } else if (m === "live") {
     renderLive();
@@ -956,14 +1030,15 @@ function setMode(m: Mode) {
 
 btnSource.addEventListener("click", () => setMode("source"));
 btnLive.addEventListener("click", () => setMode("live"));
+btnSplit.addEventListener("click", () => setMode("split"));
 btnReading.addEventListener("click", () => setMode("reading"));
 readingRoot.addEventListener("dblclick", () => setMode("live"));
 
-// Klavye kısayolları: Ctrl+1/2/3 mod değiştir
+// Klavye kısayolları: Ctrl+1/2/3/4 mod değiştir
 document.addEventListener("keydown", (e) => {
-  if ((e.ctrlKey || e.metaKey) && ["1", "2", "3"].includes(e.key)) {
+  if ((e.ctrlKey || e.metaKey) && ["1", "2", "3", "4"].includes(e.key)) {
     e.preventDefault();
-    setMode(e.key === "1" ? "source" : e.key === "2" ? "live" : "reading");
+    setMode(e.key === "1" ? "source" : e.key === "2" ? "live" : e.key === "3" ? "split" : "reading");
   }
 });
 
@@ -971,12 +1046,12 @@ document.addEventListener("keydown", (e) => {
 new MutationObserver(
   debounce(() => {
     applyHljsTheme();
-    if (!cmView) {
-      return;
+    if (cmView) {
+      cmView.dispatch({
+        effects: themeCompartment.reconfigure(isDarkTheme() ? oneDark : []),
+      });
     }
-    const dark = isDarkTheme();
-    cmView.dispatch({ effects: [] }); // no-op, tema V2'de dinamik değişecek
-    document.documentElement.dataset.theme = dark ? "dark" : "light";
+    document.documentElement.dataset.theme = isDarkTheme() ? "dark" : "light";
   }, 200)
 ).observe(document.body, { attributes: true, attributeFilter: ["class"] });
 
@@ -1050,10 +1125,16 @@ window.addEventListener("message", (event) => {
     case "config": {
       const def = (msg.defaultMode as Mode) || "live";
       wordWrap = msg.wordWrap !== false;
+      lineNumbersOn = (msg as any).lineNumbers !== false;
       applyWordWrap();
+      applyLineNumbers();
       const saved = (vscode.getState() as any)?.mode as Mode | undefined;
       const initial = saved || (window as any).__karacaInitialMode || def;
-      setMode(initial === "source" || initial === "reading" || initial === "live" ? initial : def);
+      setMode(
+        initial === "source" || initial === "reading" || initial === "split" || initial === "live"
+          ? initial
+          : def
+      );
       break;
     }
   }

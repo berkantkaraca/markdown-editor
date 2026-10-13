@@ -87,6 +87,7 @@ class KaracaMarkdownProvider implements vscode.CustomTextEditorProvider {
         type: "config",
         defaultMode: cfg().get<string>("defaultMode", "live"),
         wordWrap: cfg().get<boolean>("wordWrap", true),
+        lineNumbers: cfg().get<boolean>("lineNumbers", true),
       });
     };
 
@@ -336,6 +337,7 @@ class KaracaMarkdownProvider implements vscode.CustomTextEditorProvider {
   <div class="seg" role="tablist" aria-label="Mod">
     <button id="btn-source" data-mode="source" title="Kaynak (ham markdown)">Kaynak</button>
     <button id="btn-live" data-mode="live" title="Canlı önizleme">Canlı</button>
+    <button id="btn-split" data-mode="split" title="Split (kaynak + önizleme)">Split</button>
     <button id="btn-reading" data-mode="reading" title="Okuma (salt okunur önizleme)">Okuma</button>
   </div>
   <div class="spacer"></div>
@@ -361,7 +363,10 @@ class KaracaMarkdownProvider implements vscode.CustomTextEditorProvider {
   <button type="button" data-cmd="link" title="Bağlantı ekle">Link</button>
   <button type="button" data-cmd="image" title="Görsel ekle">Görsel</button>
 </div>
+<div id="main-row">
 <div id="source-wrap" class="hidden"><div id="cm-host"></div></div>
+<div id="split-preview" class="hidden"><div id="split-root" class="md-body"></div></div>
+</div>
 <div id="live-wrap" class="hidden"><div id="live-root" class="md-body"></div></div>
 <div id="reading-wrap" class="hidden"><div id="reading-root" class="md-body"></div><div id="back-to-live">Canlı düzenlemeye dönmek için çift tıklayın</div></div>
 <script nonce="${nonce}">

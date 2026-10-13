@@ -49,7 +49,9 @@ body {
 .hidden { display: none !important; }
 
 /* Kaynak */
-#source-wrap { flex: 1; min-height: 0; }
+#main-row { flex: 1; min-height: 0; display: flex; }
+#source-wrap { flex: 1; min-height: 0; min-width: 0; }
+#split-preview { flex: 1; min-height: 0; min-width: 0; overflow-y: auto; border-left: 1px solid var(--md-border); }
 #cm-host { height: 100%; overflow: auto; }
 #cm-host .cm-editor { height: 100%; background: transparent; }
 #cm-host .cm-scroller { font-family: var(--vscode-editor-font-family, monospace); font-size: var(--vscode-editor-font-size, 13px); }

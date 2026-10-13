@@ -50,7 +50,7 @@
       "properties": {
         "karacaMd.defaultMode": {
           "type": "string",
-          "enum": ["live", "source", "reading"],
+          "enum": ["live", "source", "split", "reading"],
           "default": "live",
           "description": "Markdown dosyası açıldığında varsayılan mod."
         },
@@ -58,6 +58,11 @@
           "type": "boolean",
           "default": true,
           "description": "Kaynak editörde satır kaydırma."
+        },
+        "karacaMd.lineNumbers": {
+          "type": "boolean",
+          "default": true,
+          "description": "Kaynak editörde satır numaraları."
         }
       }
     }

@@ -4,3 +4,5 @@ media/webview.js
 media/webview.js.map
 *.vsix
 out/
+# Yapıştırılan görseller (kullanıcı içeriği, repoya girmez)
+assets/

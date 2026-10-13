@@ -5,11 +5,11 @@ V1 tamamlandı: Kaynak / Canlı / Okuma modları, tıklanabilir görev kutuları
 
 ## Editör deneyimi
 
-- [ ] Split modu: kaynak solda + önizleme sağda, senkron kaydırmalı
-- [ ] CodeMirror temasının VS Code teması değişince dinamik güncellenmesi
+- [x] Split modu: kaynak solda + önizleme sağda, senkron kaydırmalı
+- [x] CodeMirror temasının VS Code teması değişince dinamik güncellenmesi
 - [x] Canlı modda aktif blokta markdown kısayolları (biçim çubuğu eklendi)
-- [ ] Arama/değiştir çubuğunun webview içinde çalışması (`Ctrl+F`)
-- [ ] Kelime kaydırma + satır numarası ayarlarının anlık uygulanması
+- [x] Arama/değiştir çubuğunun webview içinde çalışması (Kaynak modda `Ctrl+F`)
+- [x] Kelime kaydırma + satır numarası ayarlarının anlık uygulanması
 
 ## İçerik desteği
 

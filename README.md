@@ -8,7 +8,8 @@ Artık `Markdown: Open Preview` + split zahmeti yok. Tek sekmede 3 mod:
 |-----|---------|----------|
 | **Kaynak** | `Ctrl+1` | Ham markdown (CodeMirror, satır no, word-wrap) |
 | **Canlı** (varsayılan) | `Ctrl+2` | Canlı önizleme: bloklar render'lı, tıkladığın blok ham markdown'a dönüşür, `Esc`/`Ctrl+Enter` ile render'a döner |
-| **Okuma** | `Ctrl+3` | Salt okunur önizleme, çift tıkla Canlı'ya dön |
+| **Split** | `Ctrl+3` | Kaynak solda + önizleme sağda, senkron kaydırmalı |
+| **Okuma** | `Ctrl+4` | Salt okunur önizleme, çift tıkla Canlı'ya dön |
 
 Ekstralar:
 - Görev listeleri (`- [ ]`) hem Canlı hem Okuma modunda **tıklanabilir** — dosyaya geri yazılır.
@@ -17,7 +18,8 @@ Ekstralar:
 - Kod blokları VS Code temasına uygun renkli vurgulanır (koyu/açık otomatik).
 - Panodan görsel yapıştırma (`Ctrl+V`): md dosyasının yanındaki `assets/` klasörüne kaydedilir, imlece `![](...)` eklenir.
 - Göreli görseller (`assets/x.png` gibi) önizlemede doğrudan gösterilir.
-- Üstteki biçim çubuğu (Kaynak ve Canlı modda): geri al/yinele, kalın/italik/üstü çizili/başlık, liste/alıntı/kod, tablo/bağlantı/görsel ekleme.
+- Üstteki biçim çubuğu (Kaynak, Canlı ve Split modda): geri al/yinele, kalın/italik/üstü çizili/başlık, liste/alıntı/kod, tablo/bağlantı/görsel ekleme.
+- Kaynak modda `Ctrl+F` ile ara/değiştir.
 
 ## Çalıştırma (geliştirme)
 
@@ -34,8 +36,9 @@ npm run compile
 
 ## Ayarlar
 
-- `karacaMd.defaultMode`: `live` | `source` | `reading` (varsayılan `live`)
+- `karacaMd.defaultMode`: `live` | `source` | `split` | `reading` (varsayılan `live`)
 - `karacaMd.wordWrap`: kaynak editörde satır kaydırma (varsayılan `true`)
+- `karacaMd.lineNumbers`: kaynak editörde satır numaraları (varsayılan `true`)
 
 ## Bilinen sınırlamalar (V2 yol haritası)
 
