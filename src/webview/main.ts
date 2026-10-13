@@ -1037,29 +1037,35 @@ function applyHljsTheme() {
 // Not: document seviyesinde dinlenir — sürükle-seç sonrası odak body'de olur,
 // liveRoot'a bağlı olsaydı tuş olayı hiç ulaşmazdı
 document.addEventListener("keydown", (e) => {
-  if (editingIndex !== null) {
-    return; // açık edit kutusu kendi halleder
-  }
   if (mode !== "live") {
     return; // okuma salt okunur, split'te kaynak panelden silinir
   }
   if (e.key !== "Delete" && e.key !== "Backspace") {
     return;
   }
-  // Odak bir girdi alanında ya da editör kromundaysa karışma
+  const sel = window.getSelection();
+  if (!sel || sel.isCollapsed || sel.rangeCount === 0) {
+    return;
+  }
+  const inEditBox = (n: Node | null): boolean =>
+    !!(n && n.parentElement?.closest?.("div.block.editing"));
+  // Seçim açık edit kutusunun içindeyse textarea'ya bırak (native)
+  if (inEditBox(sel.anchorNode) || inEditBox(sel.focusNode)) {
+    return;
+  }
+  if (!liveRoot.contains(sel.anchorNode) || !liveRoot.contains(sel.focusNode)) {
+    return;
+  }
+  // Odak yabancı bir girdideyse (bulma kutusu vb.) karışma.
+  // Açık edit kutusu sorun değil: aşağıda önce commit'lenir.
   const ae = document.activeElement as HTMLElement | null;
   if (
     ae &&
-    (ae.tagName === "TEXTAREA" ||
-      ae.tagName === "INPUT" ||
+    (ae.tagName === "INPUT" ||
       ae.tagName === "BUTTON" ||
       ae.isContentEditable ||
       (ae.closest && ae.closest("#cm-host, #toolbar, #formatbar, #findbar")))
   ) {
-    return;
-  }
-  const sel = window.getSelection();
-  if (!sel || sel.isCollapsed || sel.rangeCount === 0) {
     return;
   }
   const range = sel.getRangeAt(0);
@@ -1084,25 +1090,77 @@ document.addEventListener("keydown", (e) => {
     }
   });
   if (victims.length === 0) {
+    // Kısmi seçim: çapa bloğu düzenlemeye aç (ikinci Delete içeride çalışır)
+    const anchorEl = sel.anchorNode?.parentElement;
+    const host = anchorEl?.closest?.("div.block[data-index]") as HTMLElement | null;
+    const idx = host ? Number(host.dataset.index) : NaN;
+    if (host && !Number.isNaN(idx) && blocks[idx] && editingIndex !== idx) {
+      e.preventDefault();
+      if (editingIndex !== null) {
+        commitEdit();
+      }
+      editingIndex = idx;
+      renderLive();
+    }
     return;
   }
   e.preventDefault();
+  // Seçim varken açık edit varsa önce kapat (metin zaten senkron, harita tazelenir)
+  if (editingIndex !== null) {
+    commitEdit();
+  }
   recordHist(true);
   const spans = victims
     .map((i) => blocks[i])
-    .map((b) => [b.startLine, b.endLine] as [number, number])
-    .sort((a, b2) => b2[0] - a[0]);
+    .filter((b) => !!b)
+    .map((b) => [b.startLine, b.endLine] as [number, number]);
   const lines = currentText.split("\n");
+  const removed = new Array<boolean>(lines.length).fill(false);
   for (const [s, en] of spans) {
-    lines.splice(s, en - s);
+    for (let i = Math.max(0, s); i < Math.min(en, lines.length); i++) {
+      removed[i] = true;
+    }
   }
-  currentText = lines.join("\n");
+  currentText = joinKeptLines(lines, removed);
   updateWordCount();
   sendEdit(currentText);
   syncCodeMirrorFromText();
   sel.removeAllRanges();
   renderLive();
 });
+
+// Silinen aralıklar yüzünden komşu paragraflar bitişmesin diye ayraç koru.
+// (Tablo/liste/başlık/kod gibi yapısal satırlara dokunulmaz.)
+function isParaLike(t: string): boolean {
+  return !/^\s*(#{1,6}\s+|>\s?|\||`{3,}|~{3,}|\s*[-*+]\s+|\s*\d+[.)]\s+|\s{4,}|\t)/.test(t);
+}
+
+function joinKeptLines(lines: string[], removed: boolean[]): string {
+  const out: string[] = [];
+  let removedBlankSince = false;
+  for (let i = 0; i < lines.length; i++) {
+    if (removed[i]) {
+      if (lines[i].trim() === "") {
+        removedBlankSince = true;
+      }
+      continue;
+    }
+    const cur = lines[i];
+    if (
+      out.length > 0 &&
+      removedBlankSince &&
+      cur.trim() !== "" &&
+      out[out.length - 1].trim() !== "" &&
+      isParaLike(out[out.length - 1]) &&
+      isParaLike(cur)
+    ) {
+      out.push("");
+    }
+    out.push(cur);
+    removedBlankSince = false;
+  }
+  return out.join("\n");
+}
 
 // ---------- Bulma çubuğu (Canlı/Okuma/Split önizleme) ----------
 const findbar = $("findbar");
