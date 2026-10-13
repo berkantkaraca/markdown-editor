@@ -194,6 +194,49 @@ edit kutusunu kapatıp tazeler.
   kopya (`copyDirSync`). Dev webview derlemesinde sourcemap kapalı (19 MB map
   esbuild'i çökertüyordu); iki parça ayrı process'te derlenir (`--only=`).
 
+## Hata günlüğünden kurallar (yaşandı, tekrar yasak)
+
+Süreç kuralları (araç zinciri):
+
+1. **Derlemeden test koşma.** E2E koşumu `media/webview.js` paketini çalıştırır;
+   `npm test` paketi yenilemez. Sıra her zaman: `lint` → `compile` → `test`.
+2. **Her turda `npm run lint`.** esbuild typecheck yapmaz; paket sessizce
+   `ReferenceError`'lı kodla derlenir. Test+derleme yeşili lint olmadan hükümsüzdür.
+3. **Çıktıyı budayarak okuma.** `Select-Object -Last N` hata satırlarını gizler;
+   kritik komutlarda tam çıktı + `$LASTEXITCODE` kontrol edilir.
+4. **Yorum-satır kaynaması.** Edit sonrası `//` ile başlayan satırın arkasına kod
+   yapışmadığını gözle doğrula (yaşandı: `anchorEl` tanımsız kaldı).
+5. **Yalancı geçen test yazma.** Mutasyon testlerinde paylaşılan durumu sıfırla
+   (`posted.length = 0`, taze DOM sorgusu); bayat veriyle geçen assertion
+   yasaktır. Şüpheli durumda ara durumlar loglanır, sonra temizlenir.
+6. **Paket listesini gözden geçir.** Her sürümde vsix içeriği kontrol edilir
+   (test/scratch/map/assets sızmasın); `.vscodeignore` güncel tutulur.
+
+Kod kuralları (webview):
+
+7. **Odak çalma yok.** Textarea'da `stopPropagation` yasaktır; document
+   dinleyicilerini (bloklar-arası silme, bulma) öldürür. Odak korunacaksa
+   düğmelerde `mousedown.preventDefault()` kullanılır.
+8. **Ölçüm layout sonrasına.** `scrollHeight` yalnızca DOM'a eklenip bir kare
+   geçtikten sonra (`rAF`) okunur; erken ölçüm 0 çıkar, kutu minik kalır.
+9. **Bayat DOM düğümüyle işlem yok.** Yeniden render sonrası eski düğüm
+   referansları (seçim aralığı dahil) geçersizdir; tıklama/seçim sonrası yeniden
+   sorgulanır.
+10. **CSS özgüllüğü.** Genel kural (`#formatbar button` gibi) eklenirken kapsamlı
+    seçici kullanılır (`button[data-cmd]`); yoksa ID seçici `.seg .active`
+    gibi durum stillerini ezer ve sekme vurgusu kaybolur.
+11. **Odak/blur yarışları menüyle birlikte test edilir.**
+    Menü öğesi odağı çalıp editi erken kapatmamalı (önce işlem, sonra kapat);
+    blur korumaları menü açıkken devrede kalır.
+12. **Sessiz ölüm yok.** Seçim/silme/kopya yollarında "hiçbir şey olmaması"
+    kabul edilmez: tam kapsama yoksa kısmi seçim çapa bloğu düzenlemeye açar;
+    yakalanan istisnalar (özellikle kısmi-eşleşme dallarında) en azından
+    görünür bir davranış üretir.
+13. **Satır haritası her mutasyonda kaydırılır** (Enter/silme sonrası blok
+    sınırları; `delta-shift`).
+14. **Yapısal işlemlerde ayraç korunur** (toplu silmede komşu paragraflar
+    bitişmez; tablo/liste/başlık/kod satırlarına dokunulmaz).
+
 ## Derleme / paketleme / yayınlama
 
 ```powershell
