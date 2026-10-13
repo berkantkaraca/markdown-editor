@@ -144,3 +144,21 @@ body {
 #formatbar .fsep { width: 1px; height: 18px; background: var(--md-border); margin: 0 4px; }
 /* Blok edit kutusu küçük açılmasın */
 .block.editing textarea { min-height: calc(2 * 1.6em + 20px); }
+
+/* Bulma çubuğu (Canlı/Okuma/Split önizleme) */
+#findbar { display: flex; align-items: center; gap: 6px; padding: 6px 12px; border-bottom: 1px solid var(--md-border); background: var(--vscode-editor-background); user-select: none; }
+#findbar input { background: var(--vscode-input-background); color: var(--vscode-input-foreground); border: 1px solid var(--vscode-input-border, var(--md-border)); border-radius: 4px; padding: 5px 8px; min-width: 240px; font-size: 13px; outline: none; }
+#findbar input:focus { border-color: var(--vscode-focusBorder, var(--md-accent)); }
+#find-count { opacity: .65; font-size: 12px; min-width: 80px; }
+#findbar button { border: 1px solid var(--md-border); background: transparent; color: inherit; border-radius: 5px; min-width: 26px; height: 24px; cursor: pointer; font-size: 12px; }
+#findbar button:hover { background: var(--md-hover); }
+mark.find-hit { background: var(--vscode-editor-findMatchBackground, rgba(234, 179, 8, .35)); color: inherit; border-radius: 2px; }
+mark.find-hit.current { background: var(--vscode-editor-findMatchHighlightBackground, rgba(234, 179, 8, .65)); outline: 1px solid var(--vscode-focusBorder, var(--md-accent)); }
+
+/* CodeMirror arama paneli */
+#cm-host .cm-panel.cm-search { background: var(--vscode-editorWidget-background, #252526); border-bottom: 1px solid var(--md-border); padding: 8px 10px; font-size: 12.5px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+#cm-host .cm-panel.cm-search input.cm-textfield { background: var(--vscode-input-background); color: var(--vscode-input-foreground); border: 1px solid var(--vscode-input-border, var(--md-border)); border-radius: 4px; padding: 5px 8px; min-width: 240px; font-size: 13px; }
+#cm-host .cm-panel.cm-search button.cm-button { background: var(--vscode-button-secondaryBackground, #3a3d41); color: var(--vscode-button-secondaryForeground, inherit); border: 1px solid var(--md-border); border-radius: 4px; padding: 4px 10px; cursor: pointer; font-size: 12px; }
+#cm-host .cm-panel.cm-search button.cm-button:hover { background: var(--md-hover); }
+#cm-host .cm-panel.cm-search label { display: inline-flex; align-items: center; gap: 4px; margin: 0 2px; opacity: .9; }
+#cm-host .cm-panel.cm-search input[type="checkbox"] { accent-color: var(--md-accent); }

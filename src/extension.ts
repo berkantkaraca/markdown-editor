@@ -363,6 +363,13 @@ class KaracaMarkdownProvider implements vscode.CustomTextEditorProvider {
   <button type="button" data-cmd="link" title="Bağlantı ekle">Link</button>
   <button type="button" data-cmd="image" title="Görsel ekle">Görsel</button>
 </div>
+<div id="findbar" class="hidden">
+  <input id="find-input" type="text" placeholder="Bul…" aria-label="Bul" />
+  <span id="find-count"></span>
+  <button type="button" data-ffind="prev" title="Önceki">↑</button>
+  <button type="button" data-ffind="next" title="Sonraki">↓</button>
+  <button type="button" data-ffind="close" title="Kapat">✕</button>
+</div>
 <div id="main-row">
 <div id="source-wrap" class="hidden"><div id="cm-host"></div></div>
 <div id="split-preview" class="hidden"><div id="split-root" class="md-body"></div></div>

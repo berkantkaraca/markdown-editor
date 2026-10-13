@@ -19,7 +19,9 @@ Ekstralar:
 - Panodan görsel yapıştırma (`Ctrl+V`): md dosyasının yanındaki `assets/` klasörüne kaydedilir, imlece `![](...)` eklenir.
 - Göreli görseller (`assets/x.png` gibi) önizlemede doğrudan gösterilir.
 - Üstteki biçim çubuğu (Kaynak, Canlı ve Split modda): geri al/yinele, kalın/italik/üstü çizili/başlık, liste/alıntı/kod, tablo/bağlantı/görsel ekleme.
-- Kaynak modda `Ctrl+F` ile ara/değiştir.
+- Kaynak modda `Ctrl+F` ile ara/değiştir (temaya uygun panel).
+- Canlı/Okuma/Split önizlemede `Ctrl+F` ile bulma çubuğu (sarı vurgu, `Enter` ile sonrakine geç).
+- Canlı modda birden çok bloğu seçip `Delete` ile toplu silme.
 
 ## Çalıştırma (geliştirme)
 

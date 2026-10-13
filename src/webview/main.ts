@@ -315,6 +315,9 @@ function renderLive() {
     }
   });
   postProcessImages(liveRoot);
+  if (findOpen) {
+    updateFind();
+  }
   refreshBar();
 }
 
@@ -480,7 +483,20 @@ function renderReading() {
 }
 
 function renderSplit() {
+  // Yeniden render önizlemeyi üste atmasın: kaydırma oranını koru
+  const max0 = splitPreview.scrollHeight - splitPreview.clientHeight;
+  const frac = max0 > 0 ? splitPreview.scrollTop / max0 : 0;
   renderPreviewInto(splitRoot);
+  requestAnimationFrame(() => {
+    const max1 = splitPreview.scrollHeight - splitPreview.clientHeight;
+    if (max1 > 0) {
+      syncingScroll = true;
+      splitPreview.scrollTop = frac * max1;
+      requestAnimationFrame(() => {
+        syncingScroll = false;
+      });
+    }
+  });
 }
 
 // Okuma ve split önizlemesi ortak render
@@ -510,6 +526,9 @@ function renderPreviewInto(root: HTMLElement) {
     });
   });
   postProcessImages(root);
+  if (findOpen) {
+    updateFind();
+  }
 }
 
 // Okuma modunda checkbox: n'inci task'ı bulup çevir (sıra tabanlı)
@@ -994,6 +1013,210 @@ function applyHljsTheme() {
   }
 }
 
+// ---------- Canlı modda bloklar-arası toplu silme ----------
+liveRoot.addEventListener("keydown", (e) => {
+  if (editingIndex !== null) {
+    return; // açık edit kutusu kendi halleder
+  }
+  if (e.key !== "Delete" && e.key !== "Backspace") {
+    return;
+  }
+  const sel = window.getSelection();
+  if (!sel || sel.isCollapsed || sel.rangeCount === 0) {
+    return;
+  }
+  const range = sel.getRangeAt(0);
+  const victims: number[] = [];
+  liveRoot.querySelectorAll("div.block:not(.editing)").forEach((node) => {
+    const div = node as HTMLElement;
+    const idx = Number(div.dataset.index);
+    if (Number.isNaN(idx) || !blocks[idx]) {
+      return;
+    }
+    try {
+      const r2 = document.createRange();
+      r2.selectNodeContents(div);
+      if (
+        range.compareBoundaryPoints(Range.START_TO_START, r2) <= 0 &&
+        range.compareBoundaryPoints(Range.END_TO_END, r2) >= 0
+      ) {
+        victims.push(idx);
+      }
+    } catch {
+      /* seçim blok dışına taştıysa yoksay */
+    }
+  });
+  if (victims.length === 0) {
+    return;
+  }
+  e.preventDefault();
+  recordHist(true);
+  const spans = victims
+    .map((i) => blocks[i])
+    .map((b) => [b.startLine, b.endLine] as [number, number])
+    .sort((a, b2) => b2[0] - a[0]);
+  const lines = currentText.split("\n");
+  for (const [s, en] of spans) {
+    lines.splice(s, en - s);
+  }
+  currentText = lines.join("\n");
+  updateWordCount();
+  sendEdit(currentText);
+  syncCodeMirrorFromText();
+  sel.removeAllRanges();
+  renderLive();
+});
+
+// ---------- Bulma çubuğu (Canlı/Okuma/Split önizleme) ----------
+const findbar = $("findbar");
+const findInput = $("find-input") as HTMLInputElement;
+const findCount = $("find-count");
+let findOpen = false;
+let findMarks: HTMLElement[] = [];
+let findIdx = -1;
+
+function currentPreviewRoot(): HTMLElement | null {
+  if (mode === "live") {
+    return liveRoot;
+  }
+  if (mode === "reading") {
+    return readingRoot;
+  }
+  if (mode === "split") {
+    return splitRoot;
+  }
+  return null;
+}
+
+function openFind() {
+  findOpen = true;
+  findbar.classList.remove("hidden");
+  findInput.focus();
+  findInput.select();
+  updateFind();
+}
+
+function closeFind() {
+  findOpen = false;
+  findbar.classList.add("hidden");
+  clearFindMarks();
+}
+
+function clearFindMarks() {
+  document.querySelectorAll("mark.find-hit").forEach((node) => {
+    const m = node as HTMLElement;
+    const parent = m.parentNode;
+    if (!parent) {
+      return;
+    }
+    parent.replaceChild(document.createTextNode(m.textContent || ""), m);
+    parent.normalize();
+  });
+  findMarks = [];
+  findIdx = -1;
+  updateFindCount();
+}
+
+function updateFind() {
+  clearFindMarks();
+  const q = findInput.value;
+  if (!q) {
+    return;
+  }
+  const root = currentPreviewRoot();
+  if (!root) {
+    return;
+  }
+  const lower = q.toLowerCase();
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  const nodes: Text[] = [];
+  let n: Node | null;
+  while ((n = walker.nextNode())) {
+    nodes.push(n as Text);
+  }
+  for (const node of nodes) {
+    const text = node.textContent || "";
+    const tl = text.toLowerCase();
+    let i = 0;
+    let pos = tl.indexOf(lower, i);
+    if (pos < 0) {
+      continue;
+    }
+    const frag = document.createDocumentFragment();
+    while (pos >= 0) {
+      frag.appendChild(document.createTextNode(text.slice(i, pos)));
+      const mark = document.createElement("mark");
+      mark.className = "find-hit";
+      mark.textContent = text.slice(pos, pos + q.length);
+      frag.appendChild(mark);
+      findMarks.push(mark);
+      i = pos + q.length;
+      pos = tl.indexOf(lower, i);
+    }
+    frag.appendChild(document.createTextNode(text.slice(i)));
+    node.parentNode?.replaceChild(frag, node);
+  }
+  if (findMarks.length > 0) {
+    findIdx = 0;
+    showFindMark(0);
+  }
+  updateFindCount();
+}
+
+function updateFindCount() {
+  if (!findInput.value) {
+    findCount.textContent = "";
+    return;
+  }
+  findCount.textContent =
+    findMarks.length === 0 ? "bulunamadı" : `${findIdx + 1} / ${findMarks.length}`;
+}
+
+function showFindMark(i: number) {
+  findMarks.forEach((m, j) => m.classList.toggle("current", i === j));
+  const el = findMarks[i];
+  if (el) {
+    el.scrollIntoView({ block: "center" });
+  }
+}
+
+function stepFind(dir: 1 | -1) {
+  if (findMarks.length === 0) {
+    return;
+  }
+  findIdx = (findIdx + dir + findMarks.length) % findMarks.length;
+  showFindMark(findIdx);
+  updateFindCount();
+}
+
+findInput.addEventListener(
+  "input",
+  debounce(() => updateFind(), 150)
+);
+findInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") {
+    e.preventDefault();
+    stepFind(e.shiftKey ? -1 : 1);
+  } else if (e.key === "Escape") {
+    e.preventDefault();
+    closeFind();
+  }
+  e.stopPropagation();
+});
+findbar.querySelectorAll("button[data-ffind]").forEach((node) => {
+  const b = node as HTMLButtonElement;
+  b.addEventListener("mousedown", (e) => e.preventDefault());
+  b.addEventListener("click", (e) => {
+    e.preventDefault();
+    const cmd = b.dataset.ffind || "";
+    if (cmd === "close") {
+      closeFind();
+    } else {
+      stepFind(cmd === "prev" ? -1 : 1);
+    }
+  });
+});
+
 // ---------- Mod yönetimi ----------
 function setMode(m: Mode) {
   if (editingIndex !== null && m !== "live") {
@@ -1014,6 +1237,10 @@ function setMode(m: Mode) {
   splitPreview.classList.toggle("hidden", m !== "split");
   liveWrap.classList.toggle("hidden", m !== "live");
   readingWrap.classList.toggle("hidden", m !== "reading");
+  if (m === "source" && findOpen) {
+    // Kaynak modda CodeMirror paneli devralır
+    closeFind();
+  }
   if (m === "source" || m === "split") {
     syncCodeMirrorFromText();
     if (m === "split") {
@@ -1025,6 +1252,9 @@ function setMode(m: Mode) {
   } else {
     renderReading();
   }
+  if (findOpen) {
+    updateFind();
+  }
   refreshBar();
 }
 
@@ -1034,8 +1264,20 @@ btnSplit.addEventListener("click", () => setMode("split"));
 btnReading.addEventListener("click", () => setMode("reading"));
 readingRoot.addEventListener("dblclick", () => setMode("live"));
 
-// Klavye kısayolları: Ctrl+1/2/3/4 mod değiştir
+// Klavye kısayolları: Ctrl+1/2/3/4 mod değiştir, Ctrl+F bul
 document.addEventListener("keydown", (e) => {
+  if ((e.ctrlKey || e.metaKey) && (e.key === "f" || e.key === "F")) {
+    // CodeMirror paneli açıldıysa (Kaynak/Split-odak) ona bırak
+    if (e.defaultPrevented) {
+      return;
+    }
+    const cmHandles = mode === "source" || (mode === "split" && !!cmView?.hasFocus);
+    if (!cmHandles) {
+      e.preventDefault();
+      openFind();
+    }
+    return;
+  }
   if ((e.ctrlKey || e.metaKey) && ["1", "2", "3", "4"].includes(e.key)) {
     e.preventDefault();
     setMode(e.key === "1" ? "source" : e.key === "2" ? "live" : e.key === "3" ? "split" : "reading");
@@ -1082,9 +1324,9 @@ window.addEventListener("message", (event) => {
       if (!cmView) {
         initCodeMirror();
       } else {
-        // Kaynak modda kullanıcı yazarken imleci bozma
-        const focused = cmView.hasFocus;
-        if (!(mode === "source" && focused)) {
+        // Kaynak/Split modda kullanıcı yazarken imleci ve kaydırmayı bozma
+        const cmTyping = cmView.hasFocus && (mode === "source" || mode === "split");
+        if (!cmTyping) {
           syncCodeMirrorFromText();
         }
       }
