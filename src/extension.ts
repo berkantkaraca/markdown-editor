@@ -4,6 +4,7 @@ import * as crypto from "crypto";
 import * as fs from "fs";
 import { mimeToExt, parseWikilink, fileNameForTarget, findHeadingLine, parseHeadings } from "./shared/md-utils";
 import type { HeadingNode } from "./shared/md-utils";
+import { escapeRegExp } from "./shared/md-utils";
 
 // Webview <-> extension mesaj protokolü sürümü (iki taraf da bilmediğini yoksayar)
 const PROTO = 1;
@@ -55,7 +56,7 @@ export function activate(context: vscode.ExtensionContext) {
       if (!name?.trim()) {
         return;
       }
-      const clean = name.trim();
+      const clean = name.trim().replace(/[\\/]+/g, "-");
       const dir = activeMdDir() ?? vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
       if (!dir) {
         vscode.window.showInformationMessage("Önce bir klasör açın veya bir md dosyası açın.");
@@ -102,7 +103,7 @@ export function activate(context: vscode.ExtensionContext) {
   };
   const refreshViews = () => {
     outline.refresh();
-    void backlinks.rebuild(getActiveMdDoc());
+    scheduleBacklinks();
   };
   context.subscriptions.push(
     vscode.window.registerTreeDataProvider("karacaOutline", outline),
@@ -217,6 +218,8 @@ async function findBacklinks(target: vscode.Uri): Promise<vscode.Uri[]> {
   }
   const files = await vscode.workspace.findFiles("**/*.md", "**/node_modules/**", 500);
   const out: vscode.Uri[] = [];
+  // [[Ad]] için önek çakışmasız eşleşme ([[Ad]] / [[Ad#..]] / [[Ad|..]])
+  const wikiRe = new RegExp(`\\[\\[${escapeRegExp(base)}(?:[#|\\]])`);
   for (const f of files) {
     if (f.toString() === target.toString()) {
       continue;
@@ -228,7 +231,7 @@ async function findBacklinks(target: vscode.Uri): Promise<vscode.Uri[]> {
       }
       const t = Buffer.from(bytes).toString("utf8");
       if (
-        t.includes(`[[${base}`) ||
+        wikiRe.test(t) ||
         t.includes(`](${base}.md`) ||
         t.includes(`](${base}#`) ||
         t.includes(`](${base})`)
@@ -409,6 +412,9 @@ class KaracaMarkdownProvider implements vscode.CustomTextEditorProvider {
           "Vazgeç"
         );
         if (create === "Oluştur") {
+          await vscode.workspace.fs.createDirectory(
+            vscode.Uri.file(path.dirname(target.fsPath))
+          );
           await vscode.workspace.fs.writeFile(target, Buffer.from(`# ${cleaned}\n`, "utf8"));
           await vscode.commands.executeCommand("vscode.openWith", target, "karaca.mdEditor");
         }

@@ -1,11 +1,7 @@
-import MarkdownIt from "markdown-it";
-import taskLists from "markdown-it-task-lists";
-import hljs from "highlight.js";
-import katex from "katex";
-import texmath from "markdown-it-texmath";
 import mermaid from "mermaid";
 import hljsDarkTheme from "highlight.js/styles/vs2015.css";
 import hljsLightTheme from "highlight.js/styles/vs.css";
+import { createMdPipeline } from "../shared/md-pipeline";
 import { EditorState, Compartment } from "@codemirror/state";
 import { EditorView, keymap, highlightActiveLine, lineNumbers } from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
@@ -19,7 +15,6 @@ import {
   toggleHeadingLine,
   isParaLike,
   joinKeptLines,
-  parseWikilink,
   isTableBlock,
   editTable,
   parseFrontmatter,
@@ -37,43 +32,8 @@ const vscode = acquireVsCodeApi();
 // Webview <-> extension mesaj protokolü sürümü
 const PROTO = 1;
 
-// ---------- markdown-it ----------
-const md = new MarkdownIt({
-  html: true,
-  linkify: true,
-  typographer: true,
-  highlight(str: string, lang: string): string {
-    if (lang && hljs.getLanguage(lang)) {
-      try {
-        return `<pre class="hljs"><code>${hljs.highlight(str, { language: lang }).value}</code></pre>`;
-      } catch {
-        /* fallthrough */
-      }
-    }
-    const esc = md.utils.escapeHtml(str);
-    return `<pre class="hljs"><code>${esc}</code></pre>`;
-  },
-});
-md.use(taskLists as any, { enabled: true, label: true, labelAfter: true });
-md.use(texmath as any, {
-  engine: katex,
-  delimiters: "dollars",
-  katexOptions: { strict: false, throwOnError: false },
-});
-
-// ```mermaid blokları: kod yerine diyagram kabı üret (çizim runMermaid'de)
-const defaultFence = md.renderer.rules.fence;
-md.renderer.rules.fence = (tokens, idx, options, env, self) => {
-  const info = (tokens[idx].info || "").trim().split(/\s+/)[0].toLowerCase();
-  if (info === "mermaid") {
-    const code = tokens[idx].content;
-    return `<div class="mermaid" data-source="${escapeAttr(code)}">${md.utils.escapeHtml(code)}</div>`;
-  }
-  if (defaultFence) {
-    return defaultFence(tokens, idx, options, env, self);
-  }
-  return self.renderToken(tokens, idx, options);
-};
+// ---------- markdown-it (kurulum shared/md-pipeline içindedir, test edilir) ----------
+const { md, renderWikilinks, renderBlockHtml, renderFullWithFm } = createMdPipeline();
 
 // ---------- state ----------
 type Mode = "source" | "live" | "split" | "reading";
@@ -124,24 +84,7 @@ function debounce<T extends (...a: any[]) => void>(fn: T, ms: number): T {
   }) as T;
 }
 
-function escapeAttr(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
-}
-
-// [[...]] -> tıklanabilir wiki linki (etiket/çapa shared parse ile)
-function renderWikilinks(src: string): string {
-  return src.replace(/\[\[([^\]]+)\]\]/g, (m: string, inner: string) => {
-    const p = parseWikilink(inner);
-    if (!p) {
-      return m;
-    }
-    return `<a data-wikilink="${escapeAttr(inner)}" href="#">${md.utils.escapeHtml(p.label)}</a>`;
-  });
-}
-
-function renderBlockHtml(source: string): string {
-  return md.render(renderWikilinks(source));
-}
+// (renderWikilinks / renderBlockHtml pipeline'dan gelir)
 
 function computeBlocks(text: string): Block[] {
   const lines = text.split("\n");
@@ -638,15 +581,7 @@ function renderSplit() {
   });
 }
 
-// Tam metin render (ön madde varsa tablo olarak öne alınır)
-function renderFullWithFm(text: string): string {
-  const fm = parseFrontmatter(text);
-  if (!fm) {
-    return md.render(renderWikilinks(text));
-  }
-  const rest = text.split("\n").slice(fm.endLine).join("\n");
-  return renderFrontmatterHtml(fm) + md.render(renderWikilinks(rest));
-}
+// (renderFullWithFm pipeline'dan gelir)
 
 // Okuma + split önizlemesi ortak render
 function renderPreviewInto(root: HTMLElement) {

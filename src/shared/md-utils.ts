@@ -89,6 +89,10 @@ export function joinKeptLines(lines: string[], removed: boolean[]): string {
   return out.join("\n");
 }
 
+export function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 // ---------- Tablo ----------
 
 export function splitCells(line: string): string[] {

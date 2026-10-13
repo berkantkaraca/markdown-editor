@@ -1,8 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
-  buildFindRegex,
-  togglePrefix,
+  buildFindRegex,  togglePrefix,
   toggleTaskLine,
   toggleHeadingLine,
   isParaLike,
@@ -17,6 +16,7 @@ import {
   findHeadingLine,
   parseHeadings,
   mimeToExt,
+  escapeRegExp,
 } from "../src/shared/md-utils.js";
 
 describe("togglePrefix", () => {
@@ -187,5 +187,15 @@ describe("mimeToExt", () => {
     assert.equal(mimeToExt("image/png"), "png");
     assert.equal(mimeToExt("image/svg+xml"), "svg");
     assert.equal(mimeToExt("application/pdf"), undefined);
+  });
+});
+
+describe("escapeRegExp", () => {
+  it("özel karakterleri kaçırır, önek çakışması yapmaz", () => {
+    const base = "Not (1)";
+    const re = new RegExp(`\\[\\[${escapeRegExp(base)}(?:[#|\\]])`);
+    assert.equal(re.test("[[Not (1)]]"), true);
+    assert.equal(re.test("[[Not (1)#A]]"), true);
+    assert.equal(re.test("[[Not (1)lar]]"), false);
   });
 });
