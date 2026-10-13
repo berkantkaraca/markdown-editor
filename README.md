@@ -20,7 +20,7 @@ Ekstralar:
 - Göreli görseller (`assets/x.png` gibi) önizlemede doğrudan gösterilir.
 - Üstteki biçim çubuğu (Kaynak, Canlı ve Split modda): geri al/yinele, kalın/italik/üstü çizili/başlık, liste/alıntı/kod, tablo/bağlantı/görsel ekleme.
 - Kaynak modda `Ctrl+F` ile ara/değiştir (temaya uygun panel).
-- Canlı/Okuma/Split önizlemede `Ctrl+F` ile bulma çubuğu (sarı vurgu, `Enter` ile sonrakine geç).
+- Canlı/Okuma/Split önizlemede `Ctrl+F` ile bulma çubuğu: büyük/küçük harf (Aa), tüm sözcük, normal ifade, sayaç, `Enter` ile gezinme; `≡` ile Değiştir/Tümü (kaynak metinde, `$1` destekli).
 - Canlı modda birden çok bloğu seçip `Delete` ile toplu silme.
 
 ## Çalıştırma (geliştirme)

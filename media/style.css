@@ -74,20 +74,25 @@ body {
   transition: background .12s;
 }
 .block:hover { background: var(--md-hover); }
-.block.editing { background: transparent; padding: 0; margin: 4px 0; }
+.block.editing { background: transparent; }
 .block.editing textarea {
+  display: block;
   width: 100%;
   resize: none;
   overflow: hidden;
-  background: var(--vscode-input-background);
-  color: var(--vscode-input-foreground);
-  border: 1px solid var(--vscode-focusBorder, var(--md-accent));
-  border-radius: 6px;
-  padding: 8px 10px;
+  background: transparent;
+  color: inherit;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  font: inherit;
+  line-height: inherit;
+  outline: none;
+  min-height: 1.6em;
+}
+.block.editing textarea.mono {
   font-family: var(--vscode-editor-font-family, monospace);
   font-size: 13px;
-  line-height: 1.6;
-  outline: none;
 }
 .empty-hint { opacity: .45; font-style: italic; margin: 4px 0; }
 .gap-spacer { min-height: 10px; }
@@ -142,16 +147,19 @@ body {
 #formatbar button:hover:not(:disabled) { background: var(--md-hover); border-color: var(--md-border); }
 #formatbar button:disabled { opacity: .35; cursor: default; }
 #formatbar .fsep { width: 1px; height: 18px; background: var(--md-border); margin: 0 4px; }
-/* Blok edit kutusu küçük açılmasın */
-.block.editing textarea { min-height: calc(2 * 1.6em + 20px); }
+/* (seamless editör boyu içerikten gelir, ayrı min-height yok) */
 
 /* Bulma çubuğu (Canlı/Okuma/Split önizleme) */
-#findbar { display: flex; align-items: center; gap: 6px; padding: 6px 12px; border-bottom: 1px solid var(--md-border); background: var(--vscode-editor-background); user-select: none; }
+#findbar { display: flex; flex-direction: column; align-items: stretch; gap: 4px; padding: 6px 12px; border-bottom: 1px solid var(--md-border); background: var(--vscode-editor-background); user-select: none; }
+.frow { display: flex; align-items: center; gap: 6px; }
 #findbar input { background: var(--vscode-input-background); color: var(--vscode-input-foreground); border: 1px solid var(--vscode-input-border, var(--md-border)); border-radius: 4px; padding: 5px 8px; min-width: 240px; font-size: 13px; outline: none; }
 #findbar input:focus { border-color: var(--vscode-focusBorder, var(--md-accent)); }
 #find-count { opacity: .65; font-size: 12px; min-width: 80px; }
 #findbar button { border: 1px solid var(--md-border); background: transparent; color: inherit; border-radius: 5px; min-width: 26px; height: 24px; cursor: pointer; font-size: 12px; }
-#findbar button:hover { background: var(--md-hover); }
+#findbar button:hover:not(.on) { background: var(--md-hover); }
+#findbar button.on { background: var(--vscode-button-background, #0e639c); color: var(--vscode-button-foreground, #fff); border-color: transparent; }
+#replace-input { background: var(--vscode-input-background); color: var(--vscode-input-foreground); border: 1px solid var(--vscode-input-border, var(--md-border)); border-radius: 4px; padding: 5px 8px; min-width: 240px; font-size: 13px; outline: none; }
+#replace-input:focus { border-color: var(--vscode-focusBorder, var(--md-accent)); }
 mark.find-hit { background: var(--vscode-editor-findMatchBackground, rgba(234, 179, 8, .35)); color: inherit; border-radius: 2px; }
 mark.find-hit.current { background: var(--vscode-editor-findMatchHighlightBackground, rgba(234, 179, 8, .65)); outline: 1px solid var(--vscode-focusBorder, var(--md-accent)); }
 

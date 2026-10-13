@@ -14,28 +14,17 @@ StackEdit supports standard Markdown syntax highlighting for various programming
 
 [metin](![açıklama](görsel.png))
 [metin](https://)
-## Basic Example
-1. dsf
-dsf
-ds
-d
 
-
-
-- [x] Here is a simple "Hello, World!" program written in Java:
-****pvcxkvx****
-
-
-
-```java
-public class Main {
-    public static void main(String[] args) {
-        System.out.println("Hello, World!");
-    }
-}
-```
-
-
+- **Backend Auth Endpoints (`/api/auth/**`)**:
+  - `POST /api/auth/register` -> Yeni kullanıcı kaydı.
+  - `POST /api/auth/login` -> Kullanıcı girişi. Başarılı girişte kısa ömürlü Access Token (Örn: 15 dakika geçerli JWT) ve uzun ömürlü Refresh Token (Örn: 7 gün geçerli) üretir. Refresh Token güvenli, HTTP-Only ve SameSite=Strict bir çerez (cookie) içinde veya güvenli yanıt gövdesinde dönebilir.
+  - `POST /api/auth/refresh` -> Geçerli bir Refresh Token alarak yeni bir JWT Access Token üretir ve döner (Silent Rotation).
+  - `POST /api/auth/logout` -> Refresh Token'ı veritabanında geçersiz kılar (revoke) ve oturumu kapatır.
+- **Spring Security Yapılandırması**:
+  - `/api/auth/**` endpoints herkese açık (permit-all) olmalıdır.
+  - `/api/cv/**` altındaki tüm endpointler kimlik doğrulamasına tabi olmalıdır (`authenticated`).
+  - Her gelen istek için JWT geçerliliğini kontrol eden `JwtAuthenticationFilter` filtresi entegre edilmelidir.
+  - `CvDocument` tablosundaki `userId` alanı artık istek yapan kimliği doğrulanmış kullanıcının `User.id` değeri ile dinamik olarak eşleştirilmelidir.
 # Files
 
 StackEdit stores your files in your browser, which means all your files are automatically saved locally and are accessible **offline!**
@@ -52,7 +41,7 @@ All your files and folders are presented as a tree in the file explorer. You can
 
 You can rename the current file by clicking the file name in the navigation bar or by clicking the **Rename** button in the file explorer.
 
-## Delete a file
+
 
 You can delete the current file by clicking the **Remove** button in the file explorer. The file will be moved into the **Trash** folder and automatically deleted after 7 days of inactivity.
 

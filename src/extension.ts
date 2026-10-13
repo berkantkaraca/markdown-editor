@@ -364,11 +364,22 @@ class KaracaMarkdownProvider implements vscode.CustomTextEditorProvider {
   <button type="button" data-cmd="image" title="Görsel ekle">Görsel</button>
 </div>
 <div id="findbar" class="hidden">
-  <input id="find-input" type="text" placeholder="Bul…" aria-label="Bul" />
-  <span id="find-count"></span>
-  <button type="button" data-ffind="prev" title="Önceki">↑</button>
-  <button type="button" data-ffind="next" title="Sonraki">↓</button>
-  <button type="button" data-ffind="close" title="Kapat">✕</button>
+  <div class="frow">
+    <input id="find-input" type="text" placeholder="Bul…" aria-label="Bul" />
+    <button type="button" data-ffind="case" title="Büyük/küçük harf eşleşmesi">Aa</button>
+    <button type="button" data-ffind="word" title="Tüm sözcük">ab</button>
+    <button type="button" data-ffind="regex" title="Normal ifade">.*</button>
+    <span id="find-count"></span>
+    <button type="button" data-ffind="prev" title="Önceki">↑</button>
+    <button type="button" data-ffind="next" title="Sonraki">↓</button>
+    <button type="button" data-ffind="toggle-replace" title="Değiştir">≡</button>
+    <button type="button" data-ffind="close" title="Kapat">✕</button>
+  </div>
+  <div class="frow hidden" id="replace-row">
+    <input id="replace-input" type="text" placeholder="Değiştir…" aria-label="Değiştir" />
+    <button type="button" data-ffind="replace" title="Değiştir">Değiştir</button>
+    <button type="button" data-ffind="replace-all" title="Tümünü değiştir">Tümü</button>
+  </div>
 </div>
 <div id="main-row">
 <div id="source-wrap" class="hidden"><div id="cm-host"></div></div>

@@ -328,7 +328,11 @@ function buildEditBox(b: Block, index: number): HTMLElement {
   const ta = document.createElement("textarea");
   // Sondaki boş satırları kırp ki imleç yeni satıra düşmesin, satır sonunda kalsın
   ta.value = b.source.replace(/\n+$/, "");
-  ta.rows = Math.max(2, b.source.split("\n").length);
+  ta.rows = Math.max(1, b.source.split("\n").length);
+  // Kod bloğu düzenleniyorsa mono fontta kal
+  if (/^\s*```|^( {4}|\t)/m.test(ta.value)) {
+    ta.classList.add("mono");
+  }
   ta.setAttribute("aria-label", "Blok düzenle");
   ta.addEventListener("input", () => {
     autoGrow(ta);
@@ -670,6 +674,8 @@ function applyHistText(t: string) {
     renderLive();
   } else if (mode === "reading") {
     renderReading();
+  } else if (mode === "split") {
+    renderSplit();
   }
   refreshBar();
 }
@@ -1071,9 +1077,15 @@ liveRoot.addEventListener("keydown", (e) => {
 const findbar = $("findbar");
 const findInput = $("find-input") as HTMLInputElement;
 const findCount = $("find-count");
+const replaceRow = $("replace-row");
+const replaceInput = $("replace-input") as HTMLInputElement;
 let findOpen = false;
 let findMarks: HTMLElement[] = [];
 let findIdx = -1;
+let findCase = false;
+let findWord = false;
+let findRegex = false;
+let replaceOpen = false;
 
 function currentPreviewRoot(): HTMLElement | null {
   if (mode === "live") {
@@ -1117,6 +1129,22 @@ function clearFindMarks() {
   updateFindCount();
 }
 
+function buildFindRegex(): RegExp | null {
+  const q = findInput.value;
+  if (!q) {
+    return null;
+  }
+  try {
+    let src = findRegex ? q : q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    if (findWord) {
+      src = `\\b(?:${src})\\b`;
+    }
+    return new RegExp(src, findCase ? "g" : "gi");
+  } catch {
+    return null; // hatalı ifade
+  }
+}
+
 function updateFind() {
   clearFindMarks();
   const q = findInput.value;
@@ -1127,7 +1155,11 @@ function updateFind() {
   if (!root) {
     return;
   }
-  const lower = q.toLowerCase();
+  const re = buildFindRegex();
+  if (!re) {
+    findCount.textContent = "hatalı ifade";
+    return;
+  }
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
   const nodes: Text[] = [];
   let n: Node | null;
@@ -1136,22 +1168,26 @@ function updateFind() {
   }
   for (const node of nodes) {
     const text = node.textContent || "";
-    const tl = text.toLowerCase();
+    re.lastIndex = 0;
+    let m: RegExpExecArray | null;
     let i = 0;
-    let pos = tl.indexOf(lower, i);
-    if (pos < 0) {
-      continue;
-    }
+    let found = false;
     const frag = document.createDocumentFragment();
-    while (pos >= 0) {
-      frag.appendChild(document.createTextNode(text.slice(i, pos)));
+    while ((m = re.exec(text))) {
+      found = true;
+      frag.appendChild(document.createTextNode(text.slice(i, m.index)));
       const mark = document.createElement("mark");
       mark.className = "find-hit";
-      mark.textContent = text.slice(pos, pos + q.length);
+      mark.textContent = m[0].length > 0 ? m[0] : text.slice(m.index, m.index + 1) || " ";
       frag.appendChild(mark);
       findMarks.push(mark);
-      i = pos + q.length;
-      pos = tl.indexOf(lower, i);
+      i = m.index + (m[0].length || 1);
+      if (m[0].length === 0) {
+        re.lastIndex = i;
+      }
+    }
+    if (!found) {
+      continue;
     }
     frag.appendChild(document.createTextNode(text.slice(i)));
     node.parentNode?.replaceChild(frag, node);
@@ -1161,6 +1197,62 @@ function updateFind() {
     showFindMark(0);
   }
   updateFindCount();
+}
+
+// Doküman üzerindeki eşleşmeler (Değiştir işlemleri için, kaynak offset'li)
+function docMatches(): Array<[number, number]> {
+  const re = buildFindRegex();
+  if (!re) {
+    return [];
+  }
+  re.lastIndex = 0;
+  const out: Array<[number, number]> = [];
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(currentText))) {
+    if (m[0].length === 0) {
+      re.lastIndex++;
+      continue;
+    }
+    out.push([m.index, m.index + m[0].length]);
+  }
+  return out;
+}
+
+function applyReplaceAll() {
+  const re = buildFindRegex();
+  if (!re) {
+    return;
+  }
+  recordHist(true);
+  // String.replace $1, $& gibi desenleri kendi genişletir
+  applyHistText(currentText.replace(re, replaceInput.value));
+}
+
+function applyReplaceOne() {
+  const all = docMatches();
+  if (all.length === 0) {
+    return;
+  }
+  const re = buildFindRegex();
+  if (!re) {
+    return;
+  }
+  const [s, e] = all[((findIdx % all.length) + all.length) % all.length];
+  const single = new RegExp(`^(?:${re.source})$`, re.flags.replace("g", ""));
+  const rep = currentText.slice(s, e).replace(single, replaceInput.value);
+  recordHist(true);
+  applyHistText(currentText.slice(0, s) + rep + currentText.slice(e));
+}
+
+function refreshFindButtons() {
+  findbar.querySelectorAll("button[data-ffind]").forEach((node) => {
+    const b = node as HTMLButtonElement;
+    const cmd = b.dataset.ffind || "";
+    b.classList.toggle(
+      "on",
+      (cmd === "case" && findCase) || (cmd === "word" && findWord) || (cmd === "regex" && findRegex)
+    );
+  });
 }
 
 function updateFindCount() {
@@ -1211,8 +1303,34 @@ findbar.querySelectorAll("button[data-ffind]").forEach((node) => {
     const cmd = b.dataset.ffind || "";
     if (cmd === "close") {
       closeFind();
-    } else {
-      stepFind(cmd === "prev" ? -1 : 1);
+    } else if (cmd === "prev") {
+      stepFind(-1);
+    } else if (cmd === "next") {
+      stepFind(1);
+    } else if (cmd === "case") {
+      findCase = !findCase;
+      refreshFindButtons();
+      updateFind();
+    } else if (cmd === "word") {
+      findWord = !findWord;
+      refreshFindButtons();
+      updateFind();
+    } else if (cmd === "regex") {
+      findRegex = !findRegex;
+      refreshFindButtons();
+      updateFind();
+    } else if (cmd === "toggle-replace") {
+      replaceOpen = !replaceOpen;
+      replaceRow.classList.toggle("hidden", !replaceOpen);
+      if (replaceOpen) {
+        replaceInput.focus();
+      } else {
+        findInput.focus();
+      }
+    } else if (cmd === "replace") {
+      applyReplaceOne();
+    } else if (cmd === "replace-all") {
+      applyReplaceAll();
     }
   });
 });
