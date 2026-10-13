@@ -1,8 +1,9 @@
 # Karaca MD Editor — Mimari
 
 Tek sekmede markdown düzenleme + görüntüleme yapan VS Code eklentisi.
-`CustomTextEditorProvider` + tek webview; 4 mod: **Kaynak** (`Ctrl+1`) /
-**Canlı** (`Ctrl+2`) / **Split** (`Ctrl+3`) / **Okuma** (`Ctrl+4`).
+`CustomTextEditorProvider` + tek webview; 4 mod: **Kaynak** /
+**Canlı** / **Split** / **Okuma** (üstteki sekmelerden değişir; klavye
+kısayolu bilerek yok — VS Code grup kısayollarıyla çakışmaması için).
 
 ## Dosya haritası
 
@@ -158,8 +159,9 @@ edit kutusunu kapatıp tazeler.
 1. `retainContextWhenHidden` **kapalı kalacak** (gerekçe yukarıda).
 2. Ölçüm (`scrollHeight`) her zaman layout sonrasına (`rAF`) konur.
 3. Klavye dinleyicileri hedef kitleye göre ayrılır: blok-içi (textarea/CM),
-   önizleme (document), global (mod kısayolları). Odak çalan düğmelerde
-   `mousedown.preventDefault()`.
+   önizleme (document), global (bulma). **Textarea'da `stopPropagation` YOKTUR**
+   (geçmiş ders: odağı çalıp bloklar-arası silmeyi ve tuşları öldürüyordu).
+   Odak çalmaması gereken düğmelerde `mousedown.preventDefault()`.
 4. `blocks[]` satır haritası her mutasyonda kaydırılır; index tabanlı erişim
    sadece edit oturumu içinde güvenilirdir.
 5. Service worker `InvalidStateError`, VS Code platformunun kendi bootstrap

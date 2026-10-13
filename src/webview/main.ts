@@ -13,6 +13,7 @@ import {
   togglePrefix,
   toggleTaskLine,
   toggleHeadingLine,
+  setHeadingLevel,
   isParaLike,
   joinKeptLines,
   isTableBlock,
@@ -72,7 +73,6 @@ const btnSplit = $("btn-split") as HTMLButtonElement;
 const mainRow = $("main-row");
 const splitPreview = $("split-preview");
 const splitRoot = $("split-root");
-const wcEl = $("wordcount");
 const dirtyEl = $("dirty");
 
 // ---------- helpers ----------
@@ -151,10 +151,6 @@ function computeBlocks(text: string): Block[] {
 }
 
 function updateWordCount() {
-  const words = (currentText.trim().match(/\S+/g) || []).length;
-  const chars = currentText.length;
-  const lines = currentText === "" ? 0 : currentText.split("\n").length;
-  wcEl.textContent = `${words} kelime · ${chars} karakter · ${lines} satır`;
   dirtyEl.textContent = isDirty ? "●" : "";
 }
 
@@ -293,6 +289,17 @@ function applyLineNumbers() {
   cmView.dispatch({ effects: lineNumCompartment.reconfigure(lineNumbersOn ? lineNumbers() : []) });
 }
 
+// Yeniden çizimde kaydırma oranını koru (yapıştırma sonrası üste atmayı engeller)
+function renderLiveKeepScroll() {
+  const max0 = liveWrap.scrollHeight - liveWrap.clientHeight;
+  const frac = max0 > 0 ? liveWrap.scrollTop / max0 : 0;
+  renderLive();
+  const max1 = liveWrap.scrollHeight - liveWrap.clientHeight;
+  if (max1 > 0) {
+    liveWrap.scrollTop = frac * max1;
+  }
+}
+
 // ---------- Canlı mod (artımlı render: büyük dosyalarda takılmaz) ----------
 let liveRenderId = 0;
 const LIVE_CHUNK = 150;
@@ -358,8 +365,9 @@ function buildEditBox(b: Block, index: number): HTMLElement {
   wrapper.className = "block editing";
   wrapper.dataset.index = String(index);
   const ta = document.createElement("textarea");
-  // Sondaki boş satırları kırp ki imleç yeni satıra düşmesin, satır sonunda kalsın
-  ta.value = b.source.replace(/\n+$/, "");
+  // Sondaki boş satırlar kırp ki imleç yeni satıra düşmesin, satır sonunda kalsın
+  // (boşluklardan oluşan satırlar da dahil: "  \n  \n" gibi)
+  ta.value = b.source.replace(/(?:\n[ \t]*)+$/, "");
   ta.rows = Math.max(1, b.source.split("\n").length);
   // Kod bloğu düzenleniyorsa mono fontta kal
   if (/^\s*```|^( {4}|\t)/m.test(ta.value)) {
@@ -389,7 +397,8 @@ function buildEditBox(b: Block, index: number): HTMLElement {
       e.preventDefault();
       commitEdit();
     }
-    e.stopPropagation();
+    // NOT: stopPropagation YOK — Delete/Backspace ve Ctrl+F gibi tuşlar
+    // document dinleyicilerine ulaşmalı (bloklar-arası silme, bulma çubuğu).
   });
   ta.addEventListener("blur", (e) => {
     // Biçim düğmesine geçildiyse edit açık kalsın (komut hedefsiz kalmasın)
@@ -405,43 +414,50 @@ function buildEditBox(b: Block, index: number): HTMLElement {
     }, 150);
   });
   wrapper.appendChild(ta);
-  // Tablo bloğunda satır/sütun işlem çubuğu
+  // Tablo bloğunda tek düğmeyle açılır tablo menüsü
   if (isTableBlock(ta.value)) {
+    const tbtn = document.createElement("button");
+    tbtn.type = "button";
+    tbtn.textContent = "Tablo ▾";
+    tbtn.title = "Tablo işlemleri";
+    tbtn.className = "tablemenu-btn";
+    const applyTableEdit = (op: TableOp) => {
+      const out = editTable(ta.value, op);
+      if (out === null) {
+        return;
+      }
+      recordHist(true);
+      ta.value = out;
+      ta.focus();
+      autoGrow(ta);
+      replaceBlockSource(index, out);
+    };
+    tbtn.addEventListener("mousedown", (ev) => ev.preventDefault());
+    tbtn.addEventListener("click", (ev) => {
+      ev.preventDefault();
+      openMenu(tbtn, [
+        { label: "+ Satır", run: () => applyTableEdit("add-row") },
+        { label: "− Satır", run: () => applyTableEdit("del-row") },
+        { label: "+ Sütun", run: () => applyTableEdit("add-col") },
+        { label: "− Sütun", run: () => applyTableEdit("del-col") },
+      ]);
+    });
     const bar = document.createElement("div");
     bar.className = "tablebar";
-    const ops: Array<[TableOp, string, string]> = [
-      ["add-row", "+Satır", "Satır ekle"],
-      ["del-row", "−Satır", "Satır sil"],
-      ["add-col", "+Sütun", "Sütun ekle"],
-      ["del-col", "−Sütun", "Sütun sil"],
-    ];
-    for (const [op, label, title] of ops) {
-      const b = document.createElement("button");
-      b.type = "button";
-      b.textContent = label;
-      b.title = title;
-      b.addEventListener("mousedown", (ev) => ev.preventDefault());
-      b.addEventListener("click", (ev) => {
-        ev.preventDefault();
-        const out = editTable(ta.value, op);
-        if (out === null) {
-          return;
-        }
-        recordHist(true);
-        ta.value = out;
-        ta.focus();
-        autoGrow(ta);
-        replaceBlockSource(index, out);
-      });
-      bar.appendChild(b);
-    }
+    bar.appendChild(tbtn);
     wrapper.insertBefore(bar, ta);
   }
   requestAnimationFrame(() => {
     // Ölçüm DOM'a eklendikten sonra yapılmalı, yoksa yükseklik yanlış çıkar
     autoGrow(ta);
     ta.focus();
+    // Odak sonrası seçim sıfırlanabilir — iki kez kur
     ta.setSelectionRange(ta.value.length, ta.value.length);
+    requestAnimationFrame(() => {
+      if (document.activeElement === ta) {
+        ta.setSelectionRange(ta.value.length, ta.value.length);
+      }
+    });
     wrapper.scrollIntoView({ block: "nearest" });
   });
   return wrapper;
@@ -565,20 +581,16 @@ function renderReading() {
 }
 
 function renderSplit() {
-  // Yeniden render önizlemeyi üste atmasın: kaydırma oranını koru
+  // Aynı karede geri yükle: rAF gecikmesi gidip-gelme çakması yapıyordu
   const max0 = splitPreview.scrollHeight - splitPreview.clientHeight;
   const frac = max0 > 0 ? splitPreview.scrollTop / max0 : 0;
   renderPreviewInto(splitRoot);
-  requestAnimationFrame(() => {
-    const max1 = splitPreview.scrollHeight - splitPreview.clientHeight;
-    if (max1 > 0) {
-      syncingScroll = true;
-      splitPreview.scrollTop = frac * max1;
-      requestAnimationFrame(() => {
-        syncingScroll = false;
-      });
-    }
-  });
+  const max1 = splitPreview.scrollHeight - splitPreview.clientHeight;
+  if (max1 > 0) {
+    syncingScroll = true;
+    splitPreview.scrollTop = frac * max1;
+    syncingScroll = false;
+  }
 }
 
 // (renderFullWithFm pipeline'dan gelir)
@@ -645,6 +657,21 @@ function resetMermaid(root: HTMLElement) {
 
 let lastMermaidError = "";
 let lastMermaidErrorTime = 0;
+// Başarıyla çizilen SVG'ler kaynaktan önbelleğe alınır: her render'da
+// yeniden çizmek titreme yapıyordu
+const mermaidSvgCache = new Map<string, string>();
+
+function cacheMermaidSvg(source: string, svg: string) {
+  if (!mermaidSvgCache.has(source)) {
+    if (mermaidSvgCache.size >= 50) {
+      const first = mermaidSvgCache.keys().next();
+      if (!first.done) {
+        mermaidSvgCache.delete(first.value);
+      }
+    }
+  }
+  mermaidSvgCache.set(source, svg);
+}
 
 async function runMermaid(root: HTMLElement) {
   const nodes = Array.from(root.querySelectorAll("div.mermaid:not([data-done])"));
@@ -657,28 +684,49 @@ async function runMermaid(root: HTMLElement) {
   if (visible.length === 0) {
     return;
   }
+  const fresh: HTMLElement[] = [];
+  for (const node of visible) {
+    const el = node as HTMLElement;
+    const src = el.dataset.source ?? "";
+    const hit = mermaidSvgCache.get(src);
+    if (hit !== undefined) {
+      el.innerHTML = hit;
+      el.dataset.done = "1";
+    } else {
+      el.textContent = src || el.textContent || "";
+      fresh.push(el);
+    }
+  }
+  if (fresh.length === 0) {
+    return;
+  }
   try {
     mermaid.initialize({
       startOnLoad: false,
       theme: isDarkTheme() ? "dark" : "default",
       securityLevel: "strict",
     });
-    for (const node of visible) {
-      const el = node as HTMLElement;
-      el.textContent = el.dataset.source ?? el.textContent ?? "";
-    }
-    await mermaid.run({ nodes: visible.map((n) => n as HTMLElement) });
-    visible.forEach((node) => {
-      (node as HTMLElement).dataset.done = "1";
+    await mermaid.run({ nodes: fresh.map((n) => n as HTMLElement) });
+    fresh.forEach((el) => {
+      el.dataset.done = "1";
+      cacheMermaidSvg(el.dataset.source ?? "", el.innerHTML);
     });
   } catch (err: any) {
-    const message = `Mermaid çizilemedi: ${err?.message ?? err}`;
-    visible.forEach((node) => {
-      const el = node as HTMLElement;
-      // Kaynak metin görünür kalsın ama aynı hatayı her render'da tekrar deneme
-      el.dataset.done = "1";
-      el.classList.add("mermaid-err");
+    const raw = String((err as any)?.message ?? err);
+    // getBBox vb. yerleşim hataları çevreseldir (gizli kap/async yarışı):
+    // sessiz geçilir, sonraki render tekrar dener. Sentaks hataları gösterilir.
+    const environmental =
+      /getBBox|getComputedTextLength|NS_ERROR|not rendered|offsetParent/i.test(raw);
+    const message = `Mermaid çizilemedi: ${raw}`;
+    fresh.forEach((el) => {
+      if (!environmental) {
+        el.dataset.done = "1";
+        el.classList.add("mermaid-err");
+      }
     });
+    if (environmental) {
+      return;
+    }
     const now = Date.now();
     if (message !== lastMermaidError || now - lastMermaidErrorTime > 5000) {
       lastMermaidError = message;
@@ -770,6 +818,57 @@ function docOffsetForBlock(index: number, inner: number): number {
   }
   const head = currentText.split("\n").slice(0, b.startLine).join("\n");
   return head.length + (b.startLine > 0 ? 1 : 0) + inner;
+}
+
+// ---------- Açılır menü (H seviyeleri, tablo işlemleri) ----------
+let openMenuEl: HTMLElement | null = null;
+
+function closeMenu() {
+  openMenuEl?.remove();
+  openMenuEl = null;
+  document.removeEventListener("mousedown", menuOutside, true);
+}
+
+function menuOutside(e: MouseEvent) {
+  const t = e.target as HTMLElement | null;
+  if (
+    openMenuEl &&
+    !(t?.closest?.(".kmenu") || t?.closest?.("[data-cmd$='-menu']") || t?.closest?.(".tablebar"))
+  ) {
+    closeMenu();
+  }
+}
+
+function openMenu(
+  anchor: HTMLElement,
+  items: Array<{ label: string; title?: string; run: () => void }>
+) {
+  closeMenu();
+  const menu = document.createElement("div");
+  menu.className = "kmenu";
+  menu.addEventListener("mousedown", (e) => e.preventDefault());
+  for (const it of items) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.textContent = it.label;
+    if (it.title) {
+      b.title = it.title;
+    }
+    b.addEventListener("click", (e) => {
+      e.preventDefault();
+      closeMenu();
+      it.run();
+    });
+    menu.appendChild(b);
+  }
+  document.body.appendChild(menu);
+  const r = anchor.getBoundingClientRect();
+  menu.style.left = `${Math.max(4, r.left)}px`;
+  menu.style.top = `${r.bottom + 4}px`;
+  openMenuEl = menu;
+  document.addEventListener("mousedown", menuOutside, true);
+  const first = menu.querySelector("button") as HTMLButtonElement | null;
+  first?.focus();
 }
 
 // ---------- Biçim çubuğu + geri al/yinele ----------
@@ -1096,8 +1195,33 @@ function runFormat(cmd: string) {
     case "strike":
       wrapSel("~~", "~~", "metin");
       break;
-    case "heading":
-      eachLineSel(toggleHeadingLine);
+    case "heading-menu": {
+      const btn = fmtButtons.find((x) => x.dataset.cmd === "heading-menu");
+      openMenu(
+        btn ?? document.body,
+        [1, 2, 3, 4, 5, 6]
+          .map((n) => ({
+            label: `H${n}`,
+            title: `Başlık ${n}`,
+            run: () => eachLineSel(setHeadingLevel(n)),
+          }))
+          .concat([{ label: "Temizle", title: "Başlığı kaldır", run: () => eachLineSel(toggleHeadingLine) }])
+      );
+      break;
+    }
+    case "table-menu": {
+      const btn = fmtButtons.find((x) => x.dataset.cmd === "table-menu");
+      openMenu(btn ?? document.body, [
+        { label: "Tablo Ekle", run: () => insertAtCursor(TABLE_TEMPLATE) },
+        { label: "+ Satır", run: () => tableOp("add-row") },
+        { label: "− Satır", run: () => tableOp("del-row") },
+        { label: "+ Sütun", run: () => tableOp("add-col") },
+        { label: "− Sütun", run: () => tableOp("del-col") },
+      ]);
+      break;
+    }
+    case "image":
+      insertAtCursor("![açıklama](görsel.png)", 2, 10);
       break;
     case "bullet":
       eachLineSel(togglePrefix("- "));
@@ -1129,18 +1253,6 @@ function runFormat(cmd: string) {
     }
     case "image":
       insertAtCursor("![açıklama](görsel.png)", 2, 10);
-      break;
-    case "row-add":
-      tableOp("add-row");
-      break;
-    case "row-del":
-      tableOp("del-row");
-      break;
-    case "col-add":
-      tableOp("add-col");
-      break;
-    case "col-del":
-      tableOp("del-col");
       break;
   }
   refreshBar();
@@ -1542,6 +1654,82 @@ findbar.querySelectorAll("button[data-ffind]").forEach((node) => {
   });
 });
 
+// ---------- Markdown olarak kopyalama (canlı önizleme) ----------
+document.addEventListener("copy", (e) => {
+  // Açık edit kutusu varsa native kopya zaten markdown'dır
+  if (editingIndex !== null) {
+    return;
+  }
+  if (mode !== "live") {
+    return;
+  }
+  const sel = window.getSelection();
+  if (!sel || sel.isCollapsed || sel.rangeCount === 0) {
+    return;
+  }
+  const ae = document.activeElement as HTMLElement | null;
+  if (
+    ae &&
+    (ae.tagName === "INPUT" ||
+      ae.tagName === "TEXTAREA" ||
+      (ae.closest && ae.closest("#cm-host")))
+  ) {
+    return;
+  }
+  if (!liveRoot.contains(sel.anchorNode) || !liveRoot.contains(sel.focusNode)) {
+    return;
+  }
+  const range = sel.getRangeAt(0);
+  const victims: number[] = [];
+  liveRoot.querySelectorAll("div.block:not(.editing)").forEach((node) => {
+    const div = node as HTMLElement;
+    const idx = Number(div.dataset.index);
+    if (Number.isNaN(idx) || !blocks[idx]) {
+      return;
+    }
+    try {
+      const r2 = document.createRange();
+      r2.selectNodeContents(div);
+      if (
+        range.compareBoundaryPoints(Range.START_TO_START, r2) <= 0 &&
+        range.compareBoundaryPoints(Range.END_TO_END, r2) >= 0
+      ) {
+        victims.push(idx);
+      }
+    } catch {
+      /* yoksay */
+    }
+  });
+  if (victims.length === 0) {
+    // Tek blok tam metin seçimi mi? (örn. başlığa üç kez tıklandı)
+    const anchorEl = sel.anchorNode?.parentElement;
+    const host = anchorEl?.closest?.("div.block[data-index]:not(.editing)") as HTMLElement | null;
+    if (host && host.contains(sel.focusNode)) {
+      const idx = Number(host.dataset.index);
+      const b = blocks[idx];
+      const norm = (s: string) => s.replace(/\s+/g, " ").trim();
+      if (b && norm(sel.toString()) === norm(host.textContent || "") && norm(host.textContent || "") !== "") {
+        victims.push(idx);
+      }
+    }
+  }
+  if (victims.length === 0 || !e.clipboardData) {
+    return;
+  }
+  e.preventDefault();
+  const parts = victims
+    .map((i) => blocks[i].source.replace(/(?:\n[ \t]*)+$/, "").trim())
+    .filter((s) => s !== "");
+  e.clipboardData.setData("text/plain", parts.join("\n\n").replace(/\n{3,}/g, "\n\n"));
+  try {
+    const tmp = document.createElement("div");
+    tmp.appendChild(range.cloneContents());
+    e.clipboardData.setData("text/html", tmp.innerHTML);
+  } catch {
+    /* html olmazsa düz metin yeter */
+  }
+});
+
 // ---------- Mod yönetimi ----------
 function setMode(m: Mode) {
   if (editingIndex !== null && m !== "live") {
@@ -1589,7 +1777,7 @@ btnSplit.addEventListener("click", () => setMode("split"));
 btnReading.addEventListener("click", () => setMode("reading"));
 readingRoot.addEventListener("dblclick", () => setMode("live"));
 
-// Klavye kısayolları: Ctrl+1/2/3/4 mod değiştir, Ctrl+F bul
+// Klavye: Ctrl+F bul (mod sekmeleri fareyle değişir)
 document.addEventListener("keydown", (e) => {
   if ((e.ctrlKey || e.metaKey) && (e.key === "f" || e.key === "F")) {
     // CodeMirror paneli açıldıysa (Kaynak/Split-odak) ona bırak
@@ -1602,10 +1790,6 @@ document.addEventListener("keydown", (e) => {
       openFind();
     }
     return;
-  }
-  if ((e.ctrlKey || e.metaKey) && ["1", "2", "3", "4"].includes(e.key)) {
-    e.preventDefault();
-    setMode(e.key === "1" ? "source" : e.key === "2" ? "live" : e.key === "3" ? "split" : "reading");
   }
 });
 
@@ -1664,7 +1848,8 @@ window.addEventListener("message", (event) => {
         updateWordCount();
         break;
       }
-      if (pendingPaste) {
+      const pasted = pendingPaste;
+      if (pasted) {
         // Yapıştırılan görsel dokümana işlendi: edit kutusunu kapatıp yeniden renderla
         pendingPaste = false;
         editingIndex = null;
@@ -1687,7 +1872,9 @@ window.addEventListener("message", (event) => {
         }
       }
       if (mode === "live") {
-        if (!wasEditing) {
+        if (pasted) {
+          renderLiveKeepScroll();
+        } else if (!wasEditing) {
           renderLive();
         }
         // düzenlerken: metin güncellendi ama render blur'da yapılacak

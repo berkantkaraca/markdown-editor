@@ -17,6 +17,7 @@ import {
   parseHeadings,
   mimeToExt,
   escapeRegExp,
+  setHeadingLevel,
 } from "../src/shared/md-utils.js";
 
 describe("togglePrefix", () => {
@@ -190,8 +191,16 @@ describe("mimeToExt", () => {
   });
 });
 
-describe("escapeRegExp", () => {
-  it("özel karakterleri kaçırır, önek çakışması yapmaz", () => {
+describe("setHeadingLevel", () => {
+  it("seviye atar ve değiştirir", () => {
+    assert.equal(setHeadingLevel(1)("Başlık"), "# Başlık");
+    assert.equal(setHeadingLevel(4)("## Eski"), "#### Eski");
+    assert.equal(setHeadingLevel(9)("x"), "###### x");
+    assert.equal(setHeadingLevel(2)("   "), null);
+  });
+});
+
+describe("escapeRegExp", () => {  it("özel karakterleri kaçırır, önek çakışması yapmaz", () => {
     const base = "Not (1)";
     const re = new RegExp(`\\[\\[${escapeRegExp(base)}(?:[#|\\]])`);
     assert.equal(re.test("[[Not (1)]]"), true);

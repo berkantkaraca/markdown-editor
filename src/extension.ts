@@ -604,17 +604,6 @@ ${katexStyle}
 <title>Karaca MD Editor</title>
 </head>
 <body>
-<div id="toolbar">
-  <div class="seg" role="tablist" aria-label="Mod">
-    <button id="btn-source" data-mode="source" title="Kaynak (ham markdown)">Kaynak</button>
-    <button id="btn-live" data-mode="live" title="Canlı önizleme">Canlı</button>
-    <button id="btn-split" data-mode="split" title="Split (kaynak + önizleme)">Split</button>
-    <button id="btn-reading" data-mode="reading" title="Okuma (salt okunur önizleme)">Okuma</button>
-  </div>
-  <div class="spacer"></div>
-  <span id="wordcount" title="Kelime / karakter sayısı"></span>
-  <span id="dirty" title="Kaydedilmemiş değişiklik"></span>
-</div>
 <div id="formatbar" class="hidden">
   <button type="button" data-cmd="undo" title="Geri al">↺</button>
   <button type="button" data-cmd="redo" title="Yinele">↻</button>
@@ -622,7 +611,7 @@ ${katexStyle}
   <button type="button" data-cmd="bold" title="Kalın"><b>B</b></button>
   <button type="button" data-cmd="italic" title="İtalik"><i>I</i></button>
   <button type="button" data-cmd="strike" title="Üstü çizili"><s>S</s></button>
-  <button type="button" data-cmd="heading" title="Başlık">H</button>
+  <button type="button" data-cmd="heading-menu" title="Başlık seviyesi">H ▾</button>
   <span class="fsep"></span>
   <button type="button" data-cmd="bullet" title="Madde listesi">•</button>
   <button type="button" data-cmd="numbered" title="Numaralı liste">1.</button>
@@ -630,14 +619,17 @@ ${katexStyle}
   <button type="button" data-cmd="quote" title="Alıntı">❝</button>
   <button type="button" data-cmd="code" title="Kod">‹›</button>
   <span class="fsep"></span>
-  <button type="button" data-cmd="table" title="Tablo ekle">▦</button>
+  <button type="button" data-cmd="table-menu" title="Tablo işlemleri">▦ Tablo ▾</button>
   <button type="button" data-cmd="link" title="Bağlantı ekle">Link</button>
   <button type="button" data-cmd="image" title="Görsel ekle">Görsel</button>
-  <span class="fsep"></span>
-  <button type="button" data-cmd="row-add" title="Satır ekle">Satır+</button>
-  <button type="button" data-cmd="row-del" title="Satır sil">Satır−</button>
-  <button type="button" data-cmd="col-add" title="Sütun ekle">Sütun+</button>
-  <button type="button" data-cmd="col-del" title="Sütun sil">Sütun−</button>
+  <span class="spacer"></span>
+  <span id="dirty" title="Kaydedilmemiş değişiklik"></span>
+  <div class="seg" role="tablist" aria-label="Mod">
+    <button id="btn-source" data-mode="source" title="Kaynak (ham markdown)">Kaynak</button>
+    <button id="btn-live" data-mode="live" title="Canlı önizleme">Canlı</button>
+    <button id="btn-split" data-mode="split" title="Split (kaynak + önizleme)">Split</button>
+    <button id="btn-reading" data-mode="reading" title="Okuma (salt okunur önizleme)">Okuma</button>
+  </div>
 </div>
 <div id="findbar" class="hidden">
   <div class="frow">

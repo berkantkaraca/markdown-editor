@@ -56,6 +56,16 @@ export function toggleHeadingLine(t: string): string | null {
   return `## ${t}`;
 }
 
+export const setHeadingLevel =
+  (n: number) =>
+  (t: string): string | null => {
+    if (t.trim() === "") {
+      return null;
+    }
+    const level = Math.min(6, Math.max(1, n));
+    return `${"#".repeat(level)} ${t.replace(/^(#{1,6}\s+)/, "")}`;
+  };
+
 // Düz paragraf mı? (tablo/liste/başlık/alıntı/kod değilse evet)
 export function isParaLike(t: string): boolean {
   return !/^\s*(#{1,6}\s+|>\s?|\||`{3,}|~{3,}|\s*[-*+]\s+|\s*\d+[.)]\s+|\s{4,}|\t)/.test(t);
