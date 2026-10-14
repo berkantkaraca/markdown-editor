@@ -630,6 +630,7 @@ ${katexStyle}
     <button id="btn-split" data-mode="split" title="Split (kaynak + önizleme)">Split</button>
     <button id="btn-reading" data-mode="reading" title="Okuma (salt okunur önizleme)">Okuma</button>
   </div>
+  <span id="pkgmark" title="Derleme paketi">paket-1</span>
 </div>
 <div id="findbar" class="hidden">
   <div class="frow">

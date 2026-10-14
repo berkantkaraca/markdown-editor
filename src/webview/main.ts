@@ -979,7 +979,7 @@ function openDialog(opts: {
       e.preventDefault();
       done(true);
     }
-    e.stopPropagation();
+    // NOT: stopPropagation yok — document dinleyicileri çalışmaya devam etmeli.
   });
   document.body.appendChild(box);
   openDialogEl = box;
@@ -1544,28 +1544,35 @@ document.addEventListener("keydown", (e) => {
   if (!sel || sel.isCollapsed || sel.rangeCount === 0) {
     return;
   }
-  const inEditBox = (n: Node | null): boolean =>
-    !!(n && n.parentElement?.closest?.("div.block.editing"));
-  // Seçim açık edit kutusunun içindeyse textarea'ya bırak (native)
-  if (inEditBox(sel.anchorNode) || inEditBox(sel.focusNode)) {
+  // Aralığı dondur: aşağıdaki blur() bazı ortamlarda canlı seçimi sıfırlar,
+  // klonlanmış aralık düğümlere tutunmaya devam eder.
+  const range = sel.getRangeAt(0).cloneRange();
+  const anchorNode = range.startContainer;
+  const focusNode = range.endContainer;
+  // Seçim bir girdi alanındaysa native davranışa bırak (textarea, bulma kutusu,
+  // CM arama kutusu). Açık edit kutusu dahil: içerideki seçim oraya aittir.
+  const inField = (n: Node | null): boolean => {
+    const el = (n as HTMLElement)?.parentElement;
+    return !!el?.closest?.("input, textarea, [contenteditable='true'], #cm-host");
+  };
+  if (inField(anchorNode) || inField(focusNode)) {
     return;
   }
-  if (!liveRoot.contains(sel.anchorNode) || !liveRoot.contains(sel.focusNode)) {
-    return;
-  }
-  // Odak yabancı bir girdideyse (bulma kutusu vb.) karışma.
-  // Açık edit kutusu sorun değil: aşağıda önce commit'lenir.
+  // Odak yabancı bir girdideyse (örn. seçim önizlemede, odak bulma kutusunda)
+  // önce odağı boşa al; yoksa native silme de çalışıp çift işlem olur.
+  // Açık edit kutusu hariç: o aşağıda commit ile kapanır.
   const ae = document.activeElement as HTMLElement | null;
   if (
     ae &&
-    (ae.tagName === "INPUT" ||
-      ae.tagName === "BUTTON" ||
-      ae.isContentEditable ||
-      (ae.closest && ae.closest("#cm-host, #toolbar, #formatbar, #findbar")))
+    ae !== document.body &&
+    !(ae instanceof HTMLTextAreaElement && ae.closest?.("div.block.editing")) &&
+    (ae.tagName === "INPUT" || ae.tagName === "BUTTON" || ae.isContentEditable)
   ) {
+    ae.blur();
+  }
+  if (!liveRoot.contains(anchorNode) || !liveRoot.contains(focusNode)) {
     return;
   }
-  const range = sel.getRangeAt(0);
   const contained = (el: HTMLElement): boolean => {
     try {
       const r2 = document.createRange();
@@ -1626,11 +1633,11 @@ document.addEventListener("keydown", (e) => {
       }
     });
   };
-  mapEdgeLis(blockDivOf(sel.anchorNode));
-  mapEdgeLis(blockDivOf(sel.focusNode));
+  mapEdgeLis(blockDivOf(anchorNode));
+  mapEdgeLis(blockDivOf(focusNode));
   if (victims.length === 0 && edgeSpans.length === 0) {
     // Kısmi seçim: çapa bloğu düzenlemeye aç (ikinci Delete içeride çalışır)
-    const info = blockDivOf(sel.anchorNode);
+    const info = blockDivOf(anchorNode);
     if (info && editingIndex !== info.idx) {
       e.preventDefault();
       if (editingIndex !== null) {
@@ -1883,7 +1890,7 @@ findInput.addEventListener("keydown", (e) => {
     e.preventDefault();
     closeFind();
   }
-  e.stopPropagation();
+  // NOT: stopPropagation yok — örn. Delete document dinleyicisine ulaşmalı.
 });
 findbar.querySelectorAll("button[data-ffind]").forEach((node) => {
   const b = node as HTMLButtonElement;

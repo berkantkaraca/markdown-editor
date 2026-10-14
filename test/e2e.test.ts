@@ -58,6 +58,7 @@ const SKELETON = `<!DOCTYPE html>
     <button id="btn-split" data-mode="split">Split</button>
     <button id="btn-reading" data-mode="reading">Okuma</button>
   </div>
+  <span id="pkgmark">paket-1</span>
 </div>
 <div id="findbar" class="hidden">
   <div class="frow">
@@ -157,10 +158,11 @@ before(async () => {
 });
 
 describe("e2e: açılış ve modlar", () => {
-  it("canlı modda açılır, tek aktif sekme", () => {
+  it("canlı modda açılır, tek aktif sekme, doğru paket", () => {
     const active = doc.querySelectorAll(".seg button.active");
     assert.equal(active.length, 1);
     assert.equal(active[0].id, "btn-live");
+    assert.equal((doc.querySelector("#pkgmark") as any)?.textContent, "paket-1");
     assert.ok(liveBlocks().length > 3);
     assert.ok(!doc.querySelector("#live-root textarea"), "başta edit kutusu yok");
   });
@@ -429,6 +431,36 @@ describe("e2e: kısmi başlık kopyası", () => {
     Object.defineProperty(ev, "clipboardData", { value: dt });
     (h1 as any).dispatchEvent(ev);
     assert.equal(dt.data["text/plain"], "# şlık ");
+  });
+});
+
+describe("e2e: odak bulma kutusundayken silme", () => {
+  it("Delete belgeye ulaşır, bloklar silinir", async () => {
+    send({ proto: 1, type: "update", text: SAMPLE, isDirty: false });
+    await frames(4);
+    // bulma çubuğunu aç (odak girdiye geçer — gerçek akış: Ctrl+F sonrası fareyle seçim)
+    doc.dispatchEvent(new win.KeyboardEvent("keydown", { key: "f", ctrlKey: true, bubbles: true }));
+    await frames(2);
+    const input = doc.querySelector("#find-input") as any;
+    assert.ok(input && !(doc.querySelector("#findbar") as any).classList.contains("hidden"));
+    input.focus();
+    const divs = Array.from(doc.querySelectorAll("#live-root div.block")) as any[];
+    const sel = win.getSelection();
+    const range = doc.createRange();
+    range.setStart(divs[1], 0);
+    range.setEnd(divs[2], (divs[2] as any).childNodes.length);
+    sel.removeAllRanges();
+    sel.addRange(range);
+    await sleep(400); // önceki testin sarkmış debounce gönderisi varsa aksın
+    posted.length = 0; // bayat edit mesajları testi yalan söylemesin
+    input.dispatchEvent(new win.KeyboardEvent("keydown", { key: "Delete", bubbles: true }));
+    await sleep(450);
+    const text = lastEdit();
+    assert.ok(text !== undefined, "edit mesajı gönderildi");
+    assert.ok(!text!.includes("Giriş paragrafı"), "seçili bloklar silindi");
+    // bulma çubuğunu kapatıp temiz çık
+    input.dispatchEvent(new win.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    await frames(2);
   });
 });
 
