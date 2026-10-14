@@ -134,6 +134,59 @@ export function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+// ---------- Üç-yönlü satır birleştirme (çakışan yazımlarda veri kaybını önler) ----------
+
+export interface TextHunk {
+  start: number;
+  end: number; // [start, end) aralığı lines ile değişir
+  lines: string[];
+}
+
+// İki metin arasındaki TEK blokluk farkı bulur (önek+sonek kırpma).
+function diffHunk(oldLines: string[], newLines: string[]): TextHunk {
+  let s = 0;
+  while (s < oldLines.length && s < newLines.length && oldLines[s] === newLines[s]) {
+    s++;
+  }
+  let eOld = oldLines.length;
+  let eNew = newLines.length;
+  while (eOld > s && eNew > s && oldLines[eOld - 1] === newLines[eNew - 1]) {
+    eOld--;
+    eNew--;
+  }
+  return { start: s, end: eOld, lines: newLines.slice(s, eNew) };
+}
+
+/**
+ * Üç-yönlü birleştirme: base ortak ata, current diskteki, incoming gelen.
+ * İki taraf farklı satırlara dokunduysa birleşir; çakışırsa null döner.
+ * DÖNER: birleşmiş metin | null (çakışma)
+ */
+export function mergeTexts(base: string, current: string, incoming: string): string | null {
+  if (incoming === current) {
+    return current;
+  }
+  if (incoming === base) {
+    return current;
+  }
+  if (current === base) {
+    return incoming;
+  }
+  const b = base.split("\n");
+  const hC = diffHunk(b, current.split("\n"));
+  const hI = diffHunk(b, incoming.split("\n"));
+  // Aralıklar kesişirse (sınır teması dahil) güvenli birleştirme yok
+  if (hC.start <= hI.end && hI.start <= hC.end) {
+    return null;
+  }
+  const out = b.slice();
+  const ordered = [hC, hI].sort((x, y) => y.start - x.start);
+  for (const h of ordered) {
+    out.splice(h.start, h.end - h.start, ...h.lines);
+  }
+  return out.join("\n");
+}
+
 // ---------- Tablo ----------
 
 export function splitCells(line: string): string[] {

@@ -6,6 +6,7 @@ tsconfig.json
 tsconfig.test.json
 test/**
 dist-test/**
+media/test-bundle.js
 sample.md
 deneme.md
 assets/**

@@ -32,3 +32,10 @@ V1 tamamlandı: Kaynak / Canlı / Okuma modları, tıklanabilir görev kutuları
 - [x] Webview ↔ extension mesaj protokolüne sürüm numarası ekleme (`proto: 1`)
 - [x] Büyük dosyalar (>1 MB) için artımlı render / sanallaştırma (400+ blokta parçalı DOM ekleme)
 - [x] Otomatik testler (blok ayrıştırma + wikilink birim testleri; `npm test`, 27 test)
+
+## v0.2.0 (teknik review aksiyonları)
+
+- [x] P1: Sürüm damgalı senkron (`base`/`version`) + satır-birleştirme + çakışmada disk-koruma
+- [x] P2: Mermaid lazy-load (ayrı chunk; soğuk açılış küçüldü)
+- [x] P3: `main.ts` alan denetleyicilerine ayrıldı (`protocol/history/selection/search/format`)
+- [x] P4: Workspace-kökü `localResourceRoots`'ta (`../` görseller workspace içinde çalışır)

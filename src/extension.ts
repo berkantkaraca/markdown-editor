@@ -2,7 +2,7 @@ import * as vscode from "vscode";
 import * as path from "path";
 import * as crypto from "crypto";
 import * as fs from "fs";
-import { mimeToExt, parseWikilink, fileNameForTarget, findHeadingLine, parseHeadings } from "./shared/md-utils";
+import { mimeToExt, parseWikilink, fileNameForTarget, findHeadingLine, parseHeadings, mergeTexts } from "./shared/md-utils";
 import type { HeadingNode } from "./shared/md-utils";
 import { escapeRegExp } from "./shared/md-utils";
 
@@ -269,8 +269,49 @@ class KaracaBacklinkProvider implements vscode.TreeDataProvider<vscode.TreeItem>
 class KaracaMarkdownProvider implements vscode.CustomTextEditorProvider {
   // Açık paneller (reveal-line / outline navigasyonu için uri -> panel)
   readonly panels = new Map<string, vscode.WebviewPanel>();
+  // Sürüm tarihçesi (çakışan yazımlarda üç-yönlü birleştirme için uri -> version -> metin)
+  private readonly docVersions = new Map<string, Map<number, string>>();
 
   constructor(private readonly context: vscode.ExtensionContext) {}
+
+  private recordVersion(uri: vscode.Uri, version: number, text: string): void {
+    const key = uri.toString();
+    let m = this.docVersions.get(key);
+    if (!m) {
+      m = new Map<number, string>();
+      this.docVersions.set(key, m);
+    }
+    m.set(version, text);
+    let chars = 0;
+    for (const t of m.values()) {
+      chars += t.length;
+    }
+    while ((m.size > 30 || chars > 5000000) && m.size > 1) {
+      const oldest = m.keys().next();
+      if (oldest.done) {
+        break;
+      }
+      const t = m.get(oldest.value);
+      if (t !== undefined) {
+        chars -= t.length;
+      }
+      m.delete(oldest.value);
+    }
+  }
+
+  private getVersionText(uri: vscode.Uri, version: number): string | undefined {
+    return this.docVersions.get(uri.toString())?.get(version);
+  }
+
+  private async applyText(document: vscode.TextDocument, text: string): Promise<void> {
+    const fullRange = new vscode.Range(
+      document.positionAt(0),
+      document.positionAt(document.getText().length)
+    );
+    const edit = new vscode.WorkspaceEdit();
+    edit.replace(document.uri, fullRange, text);
+    await vscode.workspace.applyEdit(edit);
+  }
 
   async resolveCustomTextEditor(
     document: vscode.TextDocument,
@@ -282,19 +323,24 @@ class KaracaMarkdownProvider implements vscode.CustomTextEditorProvider {
       localResourceRoots: [
         vscode.Uri.file(path.join(this.context.extensionPath, "media")),
         vscode.Uri.file(path.join(this.context.extensionPath, "dist")),
-        // Göreli görseller için md dosyasının klasörü
+        // Göreli görseller için md dosyasının klasörü + workspace kökleri
+        // (../ ile üst klasöre çıkan yollar workspace içindeyse yüklenir;
+        // dışarısı yükleyici tarafından engellenir)
         vscode.Uri.file(path.dirname(document.uri.fsPath)),
+        ...(vscode.workspace.workspaceFolders ?? []).map((f) => f.uri),
       ],
     };
 
     webviewPanel.webview.html = this.getHtml(webviewPanel.webview);
     this.panels.set(document.uri.toString(), webviewPanel);
+    this.recordVersion(document.uri, document.version, document.getText());
 
     const updateWebview = () => {
       webviewPanel.webview.postMessage({
         proto: PROTO,
         type: "update",
         text: document.getText(),
+        version: document.version,
         isDirty: document.isDirty,
       });
     };
@@ -312,6 +358,7 @@ class KaracaMarkdownProvider implements vscode.CustomTextEditorProvider {
 
     const changeSub = vscode.workspace.onDidChangeTextDocument((e) => {
       if (e.document.uri.toString() === document.uri.toString()) {
+        this.recordVersion(document.uri, e.document.version, e.document.getText());
         updateWebview();
       }
     });
@@ -325,6 +372,7 @@ class KaracaMarkdownProvider implements vscode.CustomTextEditorProvider {
       changeSub.dispose();
       configSub.dispose();
       this.panels.delete(document.uri.toString());
+      this.docVersions.delete(document.uri.toString());
     });
 
     // Webview'den gelen mesajlar
@@ -339,18 +387,42 @@ class KaracaMarkdownProvider implements vscode.CustomTextEditorProvider {
           break;
         }
         case "edit": {
-          // Webview full-text gönderir. Döngüyü önlemek için aynılık kontrolü.
+          // Webview full-text + taban sürüm gönderir. Döngüyü önlemek için aynılık kontrolü.
           const newText: string = msg.text ?? "";
           if (newText === document.getText()) {
             break;
           }
-          const fullRange = new vscode.Range(
-            document.positionAt(0),
-            document.positionAt(document.getText().length)
-          );
-          const edit = new vscode.WorkspaceEdit();
-          edit.replace(document.uri, fullRange, newText);
-          await vscode.workspace.applyEdit(edit);
+          const base = typeof msg.base === "number" ? msg.base : undefined;
+          const cur = document.version;
+          if (base === undefined || base === cur) {
+            await this.applyText(document, newText);
+            break;
+          }
+          const conflict = () => {
+            webviewPanel.webview.postMessage({
+              proto: PROTO,
+              type: "conflict",
+              text: document.getText(),
+              version: cur,
+            });
+            vscode.window.showWarningMessage(
+              "Dosya dışarıdan değişti; çakışmayı önlemek için diskteki sürüm korundu."
+            );
+          };
+          const baseText = this.getVersionText(document.uri, base);
+          if (baseText === undefined) {
+            // Taban artık tarihte yok: güvenli tarafta kal
+            conflict();
+            break;
+          }
+          const merged = mergeTexts(baseText, document.getText(), newText);
+          if (merged === null) {
+            conflict();
+          } else if (merged !== document.getText()) {
+            await this.applyText(document, merged);
+          } else {
+            updateWebview();
+          }
           break;
         }
         case "open-link": {
@@ -506,13 +578,7 @@ class KaracaMarkdownProvider implements vscode.CustomTextEditorProvider {
       const cursor = Math.max(0, Math.min(Number(msg.cursor) || 0, full.length));
       const snippet = `![görsel](${rel})`;
       const next = full.slice(0, cursor) + snippet + full.slice(cursor);
-      const edit = new vscode.WorkspaceEdit();
-      edit.replace(
-        document.uri,
-        new vscode.Range(document.positionAt(0), document.positionAt(full.length)),
-        next
-      );
-      await vscode.workspace.applyEdit(edit);
+      await this.applyText(document, next);
     } catch (err: any) {
       vscode.window.showErrorMessage(`Görsel yapıştırılamadı: ${err?.message ?? err}`);
     }
@@ -573,7 +639,7 @@ class KaracaMarkdownProvider implements vscode.CustomTextEditorProvider {
 
   private getHtml(webview: vscode.Webview): string {
     const scriptUri = webview.asWebviewUri(
-      vscode.Uri.file(path.join(this.context.extensionPath, "media", "webview.js"))
+      vscode.Uri.file(path.join(this.context.extensionPath, "media", "webview", "main.js"))
     );
     const styleUri = webview.asWebviewUri(
       vscode.Uri.file(path.join(this.context.extensionPath, "media", "style.css"))
@@ -597,7 +663,7 @@ class KaracaMarkdownProvider implements vscode.CustomTextEditorProvider {
 <html lang="tr">
 <head>
 <meta charset="UTF-8" />
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} https: data: blob:; media-src ${webview.cspSource} https: data: blob:; style-src ${webview.cspSource} 'unsafe-inline' https:; font-src ${webview.cspSource} https: data:; script-src 'nonce-${nonce}';" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} https: data: blob:; media-src ${webview.cspSource} https: data: blob:; style-src ${webview.cspSource} 'unsafe-inline' https:; font-src ${webview.cspSource} https: data:; script-src 'nonce-${nonce}' ${webview.cspSource};" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <link href="${styleUri}" rel="stylesheet" />
 ${katexStyle}
@@ -659,7 +725,7 @@ ${katexStyle}
 <script nonce="${nonce}">
 window.__karacaInitialMode = "live";
 </script>
-<script nonce="${nonce}" src="${scriptUri}"></script>
+<script nonce="${nonce}" type="module" src="${scriptUri}"></script>
 </body>
 </html>`;
   }

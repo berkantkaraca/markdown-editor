@@ -58,6 +58,6 @@ npm test            # birim testler (node --test, zero-dep)
 
 ## Bilinen sınırlamalar (V2 yol haritası)
 
-- Göreli görseller md klasörünün dışına (`../` ile üst klasöre) taşarsa gösterilmez.
+- Workspace dışına taşan görseller (`../../` ile workspace kökünün üstüne) güvenlik gereği gösterilmez.
 - Matematik (KaTeX) ve Mermaid diyagramları henüz yok.
 - CodeMirror teması statik (açılıştaki temaya göre); dinamik tema takibi V2'de.

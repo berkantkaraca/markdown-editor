@@ -3,7 +3,7 @@
  * çalıştırılır, acquireVsCodeApi stub'lanır, gerçek DOM olaylarıyla sürülür.
  * Çalıştırma: önce `npm run compile` (güncel paket gerekir).
  */
-import { describe, it, before } from "node:test";
+import { describe, it, before, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -124,8 +124,22 @@ function liveBlocks(): any[] {
   return Array.from(doc.querySelectorAll("#live-root div.block"));
 }
 
+// Her test deterministik başlasın: sarkmış debounce'lar aksın, metin
+// SAMPLE'a dönsün, seçim ve gönderiler temizlensin.
+async function resetDoc(): Promise<void> {
+  await sleep(450);
+  send({ proto: 1, type: "conflict", text: SAMPLE, version: 9000 });
+  await frames(4);
+  posted.length = 0;
+  win.getSelection()?.removeAllRanges();
+}
+
+beforeEach(async () => {
+  await resetDoc();
+});
+
 before(async () => {
-  const bundlePath = path.join(__dirname, "..", "..", "media", "webview.js");
+  const bundlePath = path.join(__dirname, "..", "..", "media", "test-bundle.js");
   assert.ok(fs.existsSync(bundlePath), "önce npm run compile çalışmalı");
   const bundle = fs.readFileSync(bundlePath, "utf8");
   const dom = new JSDOM(SKELETON, {
@@ -276,6 +290,9 @@ describe("e2e: kısmi seçim + Delete", () => {
 
 describe("e2e: biçim düğmesi canlıda", () => {
   it("B seçili metni kalın yapar", async () => {
+    const blocks = liveBlocks() as any[];
+    blocks[0].dispatchEvent(new win.MouseEvent("click", { bubbles: true }));
+    await frames(4);
     const ta = doc.querySelector("#live-root textarea") as any;
     assert.ok(ta, "edit açık (h1 bloğu)");
     ta.selectionStart = 2;
@@ -373,6 +390,12 @@ describe("e2e: liste Enter", () => {
   });
 
   it("boş maddede Enter listeden çıkarır", async () => {
+    send({ proto: 1, type: "update", text: "- elma\n- \n- armut", isDirty: false });
+    await frames(4);
+    const divs = Array.from(doc.querySelectorAll("#live-root div.block")) as any[];
+    const listDiv = divs.find((d: any) => (d.textContent || "").includes("elma"));
+    listDiv.dispatchEvent(new win.MouseEvent("click", { bubbles: true }));
+    await frames(4);
     const ta = doc.querySelector("#live-root textarea") as any;
     assert.ok(ta, "edit sürüyor");
     ta.selectionStart = 9;
@@ -461,6 +484,69 @@ describe("e2e: odak bulma kutusundayken silme", () => {
     // bulma çubuğunu kapatıp temiz çık
     input.dispatchEvent(new win.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
     await frames(2);
+  });
+});
+
+describe("e2e: sürüm protokolü", () => {
+  it("edit mesajı taban sürüm taşır", async () => {
+    // deterministik sıfırlama: conflict her durumda benimser
+    send({ proto: 1, type: "conflict", text: SAMPLE, version: 40 });
+    await frames(3);
+    send({ proto: 1, type: "update", text: SAMPLE, version: 41, isDirty: false });
+    await frames(4);
+    const divs = Array.from(doc.querySelectorAll("#live-root div.block")) as any[];
+    divs[0].dispatchEvent(new win.MouseEvent("click", { bubbles: true }));
+    await frames(4);
+    const ta = doc.querySelector("#live-root textarea") as any;
+    assert.ok(ta, "edit açık");
+    posted.length = 0;
+    ta.value = ta.value + "!";
+    ta.dispatchEvent(new win.Event("input", { bubbles: true }));
+    await sleep(450);
+    const edit = [...posted].reverse().find((m: any) => m?.type === "edit");
+    assert.ok(edit, "edit gönderildi");
+    assert.equal(typeof edit.base, "number");
+    assert.equal(edit.base, 41);
+    (ta as any).dispatchEvent(new win.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    await frames(3);
+  });
+
+  it("dış değişiklik yazarken ezilmez", async () => {
+    send({ proto: 1, type: "conflict", text: SAMPLE, version: 41 });
+    await frames(3);
+    const divs = Array.from(doc.querySelectorAll("#live-root div.block")) as any[];
+    divs[0].dispatchEvent(new win.MouseEvent("click", { bubbles: true }));
+    await frames(4);
+    const ta = doc.querySelector("#live-root textarea") as any;
+    assert.ok(ta, "edit açık");
+    const before = ta.value;
+    // dışarıdan değişiklik gelirken kullanıcı yazıyor sayılır (edit açık)
+    send({ proto: 1, type: "update", text: "# Dış Başlık\n\nGövde", version: 42, isDirty: false });
+    await frames(3);
+    const ta2 = doc.querySelector("#live-root textarea") as any;
+    assert.ok(ta2, "edit kutusu kapanmadı");
+    assert.equal(ta2.value, before);
+    (ta2 as any).dispatchEvent(new win.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    await frames(3);
+  });
+
+  it("conflict sunucu metnini benimser", async () => {
+    const divs = Array.from(doc.querySelectorAll("#live-root div.block")) as any[];
+    divs[0].dispatchEvent(new win.MouseEvent("click", { bubbles: true }));
+    await frames(4);
+    const ta = doc.querySelector("#live-root textarea") as any;
+    assert.ok(ta, "edit açık");
+    ta.value = ta.value + "taslak";
+    ta.dispatchEvent(new win.Event("input", { bubbles: true }));
+    await frames(2);
+    send({ proto: 1, type: "conflict", text: "# Sunucu Metni", version: 43 });
+    await frames(3);
+    assert.ok(!(doc.querySelector("#live-root textarea") as any), "edit kapandı");
+    assert.ok(
+      ((doc.querySelector("#live-root") as any).textContent || "").includes("Sunucu Metni")
+    );
+    send({ proto: 1, type: "update", text: SAMPLE, version: 44, isDirty: false });
+    await frames(4);
   });
 });
 

@@ -9,15 +9,21 @@ kısayolu bilerek yok — VS Code grup kısayollarıyla çakışmaması için).
 
 | Dosya | Rol |
 |---|---|
-| `src/extension.ts` | Extension host: provider kaydı, doküman senkronu, link/wikilink çözümleme, görsel kaydı, webview HTML iskeleti |
-| `src/webview/main.ts` | Webview uygulaması: blok modeli, 4 mod, CodeMirror, bulma/biçim çubukları, undo, görseller |
-| `src/types.d.ts` | `markdown-it-task-lists` + `*.css` (esbuild `css:text`) tip bildirimleri |
+| `src/extension.ts` | Extension host: provider, senkron, link/wikilink, görseller, paneller |
+| `src/webview/main.ts` | Besteleyici: durum, CodeMirror, render, modlar, açılış |
+| `src/webview/protocol.ts` | Mesaj protokolü (`proto`, merkezi `post`) |
+| `src/webview/history.ts` | İmleç çapalı geri-al zinciri |
+| `src/webview/selection.ts` | Toplu silme + markdown kopyalama |
+| `src/webview/search.ts` | Bulma çubuğu (bul/vurgula/değiştir) |
+| `src/webview/format.ts` | Biçim komutları, menüler, diyaloglar, `refreshBar` |
+| `src/types.d.ts` | `markdown-it-task-lists` + `*.css` + texmath tip bildirimleri |
 | `media/style.css` | Webview stilleri (VS Code tema değişkenleriyle) |
-| `media/webview.js` | Derleme çıktısı (esbuild IIFE, ~1.7 MB: CodeMirror 6 + markdown-it + highlight.js) |
-| `esbuild.js` | Çift derleme: `src/extension.ts` → `dist/` (node), `src/webview/main.ts` → `media/` (browser) |
+| `media/webview/` | Derleme çıktısı (ESM + lazy chunk'lar; giriş `main.js`) |
+| `esbuild.js` | Üç parça derleme (host + webview + test paketi); KaTeX kopyalama |
 | `src/shared/md-utils.ts` | Saf yardımcılar (test edilebilir, DOM/vscode bağımsız) |
-| `test/md-utils.test.ts` | Birim testler (`npm test`) |
-| `sample.md`, `deneme.md` | Deneme dosyaları |
+| `src/shared/md-pipeline.ts` | Render hattı (tek kaynak; test edilir) |
+| `test/` | Birim + render + e2e testleri (`npm test`) |
+| `sample.md` | Demo dosyası |
 
 ## Extension host (`src/extension.ts`)
 
@@ -139,20 +145,22 @@ Tüm mesajlarda `proto: 1` alanı vardır; iki taraf da bilmediği sürümü yok
 
 | Yön | `type` | İçerik |
 |---|---|---|
-| ext → web | `update` | `{ text, isDirty }` (her doküman değişiminde) |
+| ext → web | `update` | `{ text, version, isDirty }` (her doküman değişiminde) |
 | ext → web | `config` | `{ defaultMode, wordWrap, lineNumbers }` |
 | ext → web | `img-uris` | `{ map: {src: webviewUri} }` |
 | ext → web | `reveal-line` | `{ line }` (satıra kaydır + vurgula) |
+| ext → web | `conflict` | `{ text, version }` (taban tutmadı; disk korunur, görünüm benimser) |
 | web → ext | `ready` | açılış el sıkışması |
-| web → ext | `edit` | tam metin (250 ms debounce'lu) |
+| web → ext | `edit` | tam metin + `base` (taban sürüm; 250 ms debounce'lu) |
 | web → ext | `open-link` / `open-wikilink` | `{ href }` / `{ name }` (`name`: `Not#Başlık|Etiket` ham hali) |
 | web → ext | `paste-image` | `{ dataUrl, cursor }` |
 | web → ext | `resolve-imgs` | `{ paths[] }` |
 | web → ext | `error` | `{ message }` (kullanıcıya gösterilir) |
 
-Kurallar: tam-metin eşitse yazma/yankı atlanır; düzenlerken gelen dış `update`
-Canlı'da render'ı erteler (blur'da toparlanır); yapıştırma sonrası `pendingPaste`
-edit kutusunu kapatıp tazeler.
+Kurallar: tam-metin eşitse yazma/yankı atlanır ve taban temizlenir; yazarken
+gelen dış `update` ezilmez, ertelenir (`externalPending`) ve sonraki gönderi
+taban sürümüyle satır-birleştirmeden geçer (`mergeTexts`; çakışırsa disk kazanır
++ bildirim). Yapıştırma sonrası `pendingPaste` edit kutusunu kapatıp tazeler.
 
 ## Kritik değişmezler (bir daha dokunurken oku)
 
@@ -171,8 +179,8 @@ edit kutusunu kapatıp tazeler.
 
 ## V2 ekleri
 - **`src/shared/md-utils.ts`**: saf yardımcılar (bulma regex'i, satır aç-kapa,
-  tablo işlemleri, frontmatter, wikilink/başlık çözümleme, mime). `npm test`
-  (`node --test`, sıfır bağımlılık, 27 test) ile doğrulanır.
+  tablo işlemleri, frontmatter, wikilink/başlık çözümleme, mime, satır-birleştirme).
+  `npm test` (`node --test`, sıfır bağımlılık, 75 test) ile doğrulanır.
 - **Matematik**: `markdown-it-texmath` + `katex` (`$`/`$$`). Fontlar derlemede
   `media/fonts/` altına kopyalanır, CSS'teki `url(fonts/…)` extension tarafında
   webview URI'sine çevrilip `<style>` olarak gömülür.
@@ -189,6 +197,10 @@ edit kutusunu kapatıp tazeler.
   debounce). Komutlar: `karaca-md.newNote`, `karaca-md.dailyNote`.
 - **Artımlı render**: 400+ blokta DOM parçalar halinde (`rAF`, 150'şerli)
   eklenir; `renderId` ile eski tur iptal edilir.
+- **v0.2.0:** sürüm damgalı senkron (`base`/`version` + `mergeTexts` +
+  çakışmada disk-koruma), mermaid lazy-load (ayrı chunk), webview alan
+  denetleyicilerine ayrıldı (`protocol/history/selection/search/format`),
+  workspace-kökü `localResourceRoots`'ta.
 - **Derleme notları**: `fs.cpSync` bu makinede natif çöküyor — yerine tek-tek
   kopya (`copyDirSync`). Dev webview derlemesinde sourcemap kapalı (19 MB map
   esbuild'i çökertüyordu); iki parça ayrı process'te derlenir (`--only=`).
@@ -197,8 +209,9 @@ edit kutusunu kapatıp tazeler.
 
 Süreç kuralları (araç zinciri):
 
-1. **Derlemeden test koşma.** E2E koşumu `media/webview.js` paketini çalıştırır;
-   `npm test` paketi yenilemez. Sıra her zaman: `lint` → `compile` → `test`.
+1. **Derlemeden test koşma.** E2E koşumu `media/test-bundle.js` paketini çalıştırır;
+   `npm test` öncesi `pretest` bunu derler. Sıra her zaman:
+   `lint` → `compile` → `test`.
 2. **Her turda `npm run lint`.** esbuild typecheck yapmaz; paket sessizce
    `ReferenceError`'lı kodla derlenir. Test+derleme yeşili lint olmadan hükümsüzdür.
 3. **Çıktıyı budayarak okuma.** `Select-Object -Last N` hata satırlarını gizler;
@@ -241,7 +254,8 @@ Kod kuralları (webview):
 ```powershell
 npm install
 npm run lint        # tsc --noEmit, temiz olmalı
-npm run compile     # esbuild: dist/ + media/webview.js
+npm run compile     # esbuild: dist/ + media/webview/ (ESM chunk'lar)
+npm test            # önce test paketini derler, sonra 75 testi koşar
 npx @vscode/vsce package --no-dependencies
 code --install-extension karaca-md-editor-0.1.0.vsix
 ```
@@ -252,9 +266,10 @@ code --install-extension karaca-md-editor-0.1.0.vsix
 
 ## Güvenlik notları
 
-- CSP: `script-src` yalnızca nonce'lu scriptler; markdown içindeki ham HTML'in
-  script/handler çalıştırması engellenir.
-- `localResourceRoots`: eklenti klasörleri + md dosyasının klasörüyle sınırlı.
+- CSP: `script-src` nonce + ayn-kaynak (lazy chunk'lar için); markdown içindeki
+  ham HTML'in script/handler çalıştırması engellenir.
+- `localResourceRoots`: eklenti klasörleri + md klasörü + workspace kökleri
+  (`../` workspace içinde çalışır, dışı yükleyici tarafından engellenir).
 - Yapıştırılan görseller: MIME beyaz listesi + 15 MB tavan + `assets/` altına
   yazma; dosya adı zaman damgalı ve ASCII.
 - Dış bağlantılar `env.openExternal`'dan geçer. Bağımlılıklar denetimli
@@ -264,7 +279,7 @@ code --install-extension karaca-md-editor-0.1.0.vsix
 
 - Önizlemede bulma-değiştirme sayaç sırası ile kaynak sırası sentaks
   karakterli sorgularda sapabilir.
-- `../` ile klasör dışına çıkan göreli görseller yüklenemez.
+- `../` ile workspace dışına çıkan göreli görseller güvenlik gereği yüklenemez.
 - Canlı modda geri alma sonrası kutu kapanır (imleç Kaynak/Split modda korunur).
 
 ## Faz 1-3 uyarlama notları (referans tekniklerin bizdeki karşılığı)

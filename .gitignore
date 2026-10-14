@@ -1,8 +1,10 @@
 node_modules/
 dist/
 dist-test/
+media/webview/
 media/webview.js
 media/webview.js.map
+media/test-bundle.js
 media/katex.css
 media/fonts/
 *.vsix

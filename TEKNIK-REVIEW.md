@@ -10,7 +10,7 @@ sürekli bölünmüş ekran) yerine, **tek sekmede 4 modlu** bir editör gelişt
 Kaynak, Canlı (tıkla-yerinde-düzenle), Split (senkron çift panel) ve Okuma.
 Ürün; görev listeleri, wiki-bağlantılar, matematik, diyagramlar, tablo
 düzenleyici, panodan görsel yapıştırma, bulma/değiştirme ve geri-altyapısı ile
-tam özellikli bir not alma ortamıdır. ~3.400 satır TypeScript, **67 otomatik
+tam özellikli bir not alma ortamıdır. ~3.400 satır TypeScript, **75 otomatik
 test** (birim + headless uçtan-uca), `npm audit` temiz, 2,57 MB imzalı paket.
 
 ## 2. Ürün Kapsamı
@@ -129,7 +129,7 @@ anlık uyarlanır (gizli kaplar atlanır — gizli SVG'de ölçüm hatası verme
 - **Render hattı (8):** mermaid/hljs/KaTeX fence'leri, wikilink, frontmatter.
 - **Uçtan-uca (32):** derlenmiş paket jsdom'da çalıştırılır; mod geçişi, edit+
   imleç, toplu silme (3 senaryo), tablo menüsü zamanlama yarışı, kopya, bulma —
-  hepsi gerçek DOM olaylarıyla. Toplam **67 test**, iki tur üst üste yeşil.
+  hepsi gerçek DOM olaylarıyla. Toplam **75 test**, iki tur üst üste yeşil.
 - **Süreç kuralları:** `ARCHITECTURE.md` > "Hata günlüğünden kurallar" (14 madde)
   — derlemeden test yok, yalancı-yeşil test yok, paket listesi gözden geçirme.
 - **Paket:** vsix içeriği zip seviyesinde doğrulandı (72 dosya; test/scratch/map
@@ -137,8 +137,8 @@ anlık uyarlanır (gizli kaplar atlanır — gizli SVG'de ölçüm hatası verme
 
 ## 8. Metrikler
 
-22 commit · ~3.400 satır TS (webview ~2.100, extension ~640, shared ~500) ·
-67 test · webview paketi 5,58 MB (minify) · vsix 2,57 MB · eklenti açılışı <100 ms.
+22 commit · ~3.600 satır TS (webview ~1.100 + alan modülleri ~1.300, extension ~750, shared ~500) ·
+75 test · vsix 2,57 MB · eklenti açılışı <100 ms.
 
 ## 9. Bilinen Sınırlamalar ve Riskler
 

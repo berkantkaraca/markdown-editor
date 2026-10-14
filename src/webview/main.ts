@@ -1,7 +1,12 @@
-import mermaid from "mermaid";
 import hljsDarkTheme from "highlight.js/styles/vs2015.css";
 import hljsLightTheme from "highlight.js/styles/vs.css";
 import { createMdPipeline, type Block } from "../shared/md-pipeline";
+import type { TableOp } from "../shared/md-utils";
+import { createHistory } from "./history";
+import { attachSelectionHandlers } from "./selection";
+import { attachFindbar } from "./search";
+import { attachFormatbar, openMenu, cmListEnter, isMenuOpen } from "./format";
+import { PROTO, createPoster } from "./protocol";
 import { EditorState, Compartment } from "@codemirror/state";
 import { EditorView, keymap, highlightActiveLine, lineNumbers } from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
@@ -9,16 +14,8 @@ import { markdown } from "@codemirror/lang-markdown";
 import { oneDark } from "@codemirror/theme-one-dark";
 import { search, searchKeymap, highlightSelectionMatches } from "@codemirror/search";
 import {
-  buildFindRegex as makeFindRegex,
-  togglePrefix,
-  toggleTaskLine,
-  toggleHeadingLine,
-  setHeadingLevel,
-  isParaLike,
-  joinKeptLines,
   isTableBlock,
   editTable,
-  listItemLineSpans,
   listEnterAction,
 } from "../shared/md-utils";
 
@@ -30,8 +27,8 @@ declare function acquireVsCodeApi(): {
 
 const vscode = acquireVsCodeApi();
 
-// Webview <-> extension mesaj protokolü sürümü
-const PROTO = 1;
+// Giden mesajlar tek noktadan (sürüm damgalı)
+const post = createPoster((m) => vscode.postMessage(m));
 
 // ---------- markdown-it (kurulum shared/md-pipeline içindedir, test edilir) ----------
 const { renderBlockHtml, renderFullWithFm, computeBlocks } = createMdPipeline();
@@ -41,6 +38,16 @@ type Mode = "source" | "live" | "split" | "reading";
 let mode: Mode = "live";
 let currentText = "";
 let isDirty = false;
+// textBase: currentText'in türediği sunucu sürümü (doğru soy izleme);
+// dirty: gönderilmemiş yerel yazım var mı?
+let textBase = -1;
+let dirty = false;
+let externalPending: { text: string; version: number } | null = null;
+
+// Yerel mutasyon noktalarından çağrılır.
+function markLocalEdit(): void {
+  dirty = true;
+}
 let wordWrap = true;
 let editingIndex: number | null = null;
 let blocks: Block[] = [];
@@ -86,13 +93,15 @@ function updateWordCount() {
 }
 
 const sendEdit = debounce((text: string) => {
-  vscode.postMessage({ proto: PROTO, type: "edit", text });
+  post({ type: "edit", text, base: textBase });
+  dirty = false;
 }, 250);
 
 function setTextFromWebview(newText: string) {
   if (newText === currentText) {
     return;
   }
+  markLocalEdit();
   currentText = newText;
   updateWordCount();
   sendEdit(newText);
@@ -113,7 +122,7 @@ function initCodeMirror() {
       highlightActiveLine(),
       keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap]),
       // Liste Enter davranışı (eşleşmezse false döner, varsayılan Enter çalışır)
-      keymap.of([{ key: "Enter", run: cmListEnter }]),
+      keymap.of([{ key: "Enter", run: (view) => cmListEnter(view, (f) => undoHistory.record(f)) }]),
       search({ top: true }),
       highlightSelectionMatches(),
       markdown(),
@@ -133,10 +142,11 @@ function initCodeMirror() {
       EditorView.updateListener.of((u) => {
         if (u.docChanged && !cmApplyingExternal) {
           const t = u.state.doc.toString();
+          markLocalEdit();
           currentText = t;
           updateWordCount();
           sendEdit(t);
-          recordHist();
+          undoHistory.record();
           // Canlı blokların kaynağını kirletmemek için render'ı ertele
           scheduleLiveRerender();
         }
@@ -271,11 +281,11 @@ function renderLive() {
       return;
     }
     postProcessImages(liveRoot);
-    if (findOpen) {
-      updateFind();
+    if (findApi.isOpen()) {
+      findApi.refresh();
     }
     void runMermaid(liveRoot);
-    refreshBar();
+    formatApi.refreshBar();
   };
   if (blocks.length <= 400) {
     for (let i = 0; i < blocks.length; i++) {
@@ -350,7 +360,7 @@ function buildEditBox(b: Block, index: number): HTMLElement {
         const act = listEnterAction(ta.value.slice(lineStart, lineEnd));
         if (act.kind !== "none") {
           e.preventDefault();
-          recordHist(true);
+          undoHistory.record(true);
           if (act.kind === "exit") {
             ta.setRangeText("", lineStart, lineEnd, "end");
           } else if (act.kind === "outdent") {
@@ -381,7 +391,7 @@ function buildEditBox(b: Block, index: number): HTMLElement {
     ) {
       return;
     }
-    if (openMenuEl || openDialogEl) {
+    if (isMenuOpen()) {
       return;
     }
     // checkbox/link tıklamasına izin vermek için microtask ertele
@@ -404,7 +414,7 @@ function buildEditBox(b: Block, index: number): HTMLElement {
       if (out === null) {
         return;
       }
-      recordHist(true);
+      undoHistory.record(true);
       ta.value = out;
       ta.focus();
       autoGrow(ta);
@@ -457,6 +467,7 @@ function replaceBlockSource(index: number, newSource: string) {
   const after = lines.slice(b.endLine);
   const mid = newSource.split("\n");
   const next = [...before, ...mid, ...after].join("\n");
+  markLocalEdit();
   currentText = next;
   // Satır haritasını kaydır: Enter/silme ile blok satır sayısı değişince
   // sonraki blokların sınırları kayar, kaydırılmazsa içerik bozulur
@@ -471,7 +482,7 @@ function replaceBlockSource(index: number, newSource: string) {
   }
   updateWordCount();
   sendEdit(next);
-  recordHist();
+  undoHistory.record();
   syncCodeMirrorFromText();
 }
 
@@ -498,12 +509,12 @@ function wireRenderedBlock(div: HTMLElement, index: number) {
       e.stopPropagation();
       const wiki = a.getAttribute("data-wikilink");
       if (wiki) {
-        vscode.postMessage({ proto: PROTO, type: "open-wikilink", name: wiki });
+        post({ type: "open-wikilink", name: wiki });
         return;
       }
       const href = a.getAttribute("href") || "";
       if (href) {
-        vscode.postMessage({ proto: PROTO, type: "open-link", href });
+        post({ type: "open-link", href });
       }
     });
   });
@@ -538,7 +549,7 @@ function toggleTaskCheckbox(blockIndex: number, checked: boolean) {
   if (next === b.source) {
     return;
   }
-  recordHist(true);
+  undoHistory.record(true);
   replaceBlockSource(blockIndex, next);
   // Canlı görünümde checkbox durumunu anında yansıt (tam re-render gereksiz)
   b.source = next;
@@ -590,18 +601,18 @@ function renderPreviewInto(root: HTMLElement) {
       e.stopPropagation();
       const wiki = a.getAttribute("data-wikilink");
       if (wiki) {
-        vscode.postMessage({ proto: PROTO, type: "open-wikilink", name: wiki });
+        post({ type: "open-wikilink", name: wiki });
         return;
       }
       const href = a.getAttribute("href") || "";
       if (href) {
-        vscode.postMessage({ proto: PROTO, type: "open-link", href });
+        post({ type: "open-link", href });
       }
     });
   });
   postProcessImages(root);
-  if (findOpen) {
-    updateFind();
+  if (findApi.isOpen()) {
+    findApi.refresh();
   }
   void runMermaid(root);
 }
@@ -621,7 +632,7 @@ function toggleTaskInFullText(checked: boolean, el: HTMLInputElement, root: HTML
     }
     return m;
   });
-  recordHist(true);
+  undoHistory.record(true);
   setTextFromWebview(next);
   syncCodeMirrorFromText();
 }
@@ -679,6 +690,9 @@ async function runMermaid(root: HTMLElement) {
     return;
   }
   try {
+    // Mermaid ayrı chunk'tan tembel yüklenir (soğuk açılışı hafifletir).
+    // NOT: statik import edilmez ki ana pakete gömülmesin.
+    const mermaid = (await import("mermaid")).default;
     mermaid.initialize({
       startOnLoad: false,
       theme: isDarkTheme() ? "dark" : "default",
@@ -709,8 +723,7 @@ async function runMermaid(root: HTMLElement) {
     if (message !== lastMermaidError || now - lastMermaidErrorTime > 5000) {
       lastMermaidError = message;
       lastMermaidErrorTime = now;
-      vscode.postMessage({
-        proto: PROTO,
+      post({
         type: "error",
         message,
       });
@@ -750,7 +763,7 @@ function postProcessImages(root: HTMLElement) {
     }
   });
   if (missing.length > 0) {
-    vscode.postMessage({ proto: PROTO, type: "resolve-imgs", paths: missing });
+    post({ type: "resolve-imgs", paths: missing });
   }
 }
 
@@ -776,15 +789,15 @@ function getImageFromClipboard(e: ClipboardEvent): File | null {
 
 function readAndSendImage(file: File, cursor: number) {
   if (file.size > 15 * 1024 * 1024) {
-    vscode.postMessage({ proto: PROTO, type: "error", message: "Görsel 15 MB'tan büyük, yapıştırılamadı." });
+    post({ type: "error", message: "Görsel 15 MB'tan büyük, yapıştırılamadı." });
     return;
   }
   const r = new FileReader();
   r.onload = () => {
     pendingPaste = true;
-    vscode.postMessage({ proto: PROTO, type: "paste-image", dataUrl: String(r.result || ""), cursor });
+    post({ type: "paste-image", dataUrl: String(r.result || ""), cursor });
   };
-  r.onerror = () => vscode.postMessage({ proto: PROTO, type: "error", message: "Görsel okunamadı." });
+  r.onerror = () => post({ type: "error", message: "Görsel okunamadı." });
   r.readAsDataURL(file);
 }
 
@@ -798,227 +811,65 @@ function docOffsetForBlock(index: number, inner: number): number {
   return head.length + (b.startLine > 0 ? 1 : 0) + inner;
 }
 
-// ---------- Açılır menü (H seviyeleri, tablo işlemleri) ----------
-let openMenuEl: HTMLElement | null = null;
 
-function closeMenu() {
-  openMenuEl?.remove();
-  openMenuEl = null;
-  document.removeEventListener("mousedown", menuOutside, true);
-  // NOT: burada commit YOK. İşlem (it.run) kapatmadan önce çalışır ve odağı
-  // editöre döndürür; menü dışı tıklamada blur zaten commit'i tetikler.
-}
+// Geri al/yinele zinciri history.ts içindedir (imleç çapalı anlık görüntüler).
+const undoHistory = createHistory({
+  getText: () => currentText,
+  getAnchor: () => currentAnchor(),
+  apply: (t, a) => applyHistText(t, a),
+  changed: () => formatApi.refreshBar(),
+});
 
-function menuOutside(e: MouseEvent) {
-  const t = e.target as HTMLElement | null;
-  if (
-    openMenuEl &&
-    !(t?.closest?.(".kmenu") || t?.closest?.("[data-cmd$='-menu']") || t?.closest?.(".tablebar"))
-  ) {
-    closeMenu();
-  }
-}
-
-function openMenu(
-  anchor: HTMLElement,
-  items: Array<{ label: string; title?: string; run: () => void }>
-) {
-  closeMenu();
-  const menu = document.createElement("div");
-  menu.className = "kmenu";
-  menu.addEventListener("mousedown", (e) => e.preventDefault());
-  menu.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") {
-      e.preventDefault();
-      closeMenu();
-    }
-  });
-  for (const it of items) {
-    const b = document.createElement("button");
-    b.type = "button";
-    b.textContent = it.label;
-    if (it.title) {
-      b.title = it.title;
-    }
-    b.addEventListener("click", (e) => {
-      e.preventDefault();
-      // Önce işlem (odak ve içerik yerindeyken), sonra kapat
-      it.run();
-      closeMenu();
-    });
-    menu.appendChild(b);
-  }
-  document.body.appendChild(menu);
-  const r = anchor.getBoundingClientRect();
-  menu.style.left = `${Math.max(4, r.left)}px`;
-  menu.style.top = `${r.bottom + 4}px`;
-  openMenuEl = menu;
-  document.addEventListener("mousedown", menuOutside, true);
-  const first = menu.querySelector("button") as HTMLButtonElement | null;
-  first?.focus();
-}
-
-// ---------- Popover diyalog (bağlantı / görsel) ----------
-let openDialogEl: HTMLElement | null = null;
-
-function closeDialog() {
-  openDialogEl?.remove();
-  openDialogEl = null;
-  document.removeEventListener("mousedown", dialogOutside, true);
-}
-
-function dialogOutside(e: MouseEvent) {
-  const t = e.target as HTMLElement | null;
-  if (openDialogEl && !(t?.closest?.(".kdialog") || t?.closest?.("[data-cmd='link'],[data-cmd='image']"))) {
-    closeDialog();
-  }
-}
-
-interface DialogField {
-  key: string;
-  label: string;
-  value: string;
-}
-
-function openDialog(opts: {
-  title: string;
-  fields: DialogField[];
-  okLabel: string;
-  focusSecond?: boolean;
-  onOk: (vals: Record<string, string>) => void;
-}) {
-  closeMenu();
-  closeDialog();
-  // Hedef + seçim dondurulur (odak diyaloğa geçecek)
-  const target = getTarget();
-  let cmSel: { anchor: number; head: number } | null = null;
-  let taCtx: { el: HTMLTextAreaElement; index: number; s: number; e: number } | null = null;
-  if (target?.kind === "cm" && cmView) {
-    const r = cmView.state.selection.main;
-    cmSel = { anchor: r.anchor, head: r.head };
-  } else if (target?.kind === "ta") {
-    taCtx = {
-      el: target.el,
-      index: target.index,
-      s: target.el.selectionStart ?? 0,
-      e: target.el.selectionEnd ?? 0,
-    };
-  } else {
-    return;
-  }
-  const box = document.createElement("div");
-  box.className = "kdialog";
-  const title = document.createElement("div");
-  title.className = "kdialog-title";
-  title.textContent = opts.title;
-  box.appendChild(title);
-  const inputs: Record<string, HTMLInputElement> = {};
-  for (const f of opts.fields) {
-    const label = document.createElement("label");
-    label.textContent = f.label;
-    const input = document.createElement("input");
-    input.type = "text";
-    input.value = f.value;
-    inputs[f.key] = input;
-    label.appendChild(input);
-    box.appendChild(label);
-  }
-  const row = document.createElement("div");
-  row.className = "kdialog-row";
-  const cancel = document.createElement("button");
-  cancel.type = "button";
-  cancel.textContent = "Vazgeç";
-  const ok = document.createElement("button");
-  ok.type = "button";
-  ok.textContent = opts.okLabel;
-  ok.className = "primary";
-  row.appendChild(cancel);
-  row.appendChild(ok);
-  box.appendChild(row);
-  const done = (commit: boolean) => {
-    const vals: Record<string, string> = {};
-    for (const k of Object.keys(inputs)) {
-      vals[k] = inputs[k].value;
-    }
-    closeDialog();
-    if (!commit) {
-      return;
-    }
-    // Seçimi geri kur, sonra ekle
-    if (cmSel && cmView) {
-      cmView.dispatch({
-        selection: {
-          anchor: Math.min(cmSel.anchor, cmView.state.doc.length),
-          head: Math.min(cmSel.head, cmView.state.doc.length),
-        },
-      });
-      cmView.focus();
-    } else if (taCtx && taCtx.el.isConnected) {
-      taCtx.el.focus();
-      taCtx.el.selectionStart = Math.min(taCtx.s, taCtx.el.value.length);
-      taCtx.el.selectionEnd = Math.min(taCtx.e, taCtx.el.value.length);
+// Alan denetleyiciler modüllerine bağlıdır (selection/search/format)
+const formatApi = attachFormatbar({
+  getMode: () => mode,
+  getEditingIndex: () => editingIndex,
+  setEditingIndex: (i) => {
+    editingIndex = i;
+  },
+  getBlocks: () => blocks,
+  liveRoot,
+  getCmView: () => cmView,
+  record: (force) => undoHistory.record(force),
+  replaceBlock: (index, text) => replaceBlockSource(index, text),
+  undoState: () => ({ canUndo: undoHistory.canUndo, canRedo: undoHistory.canRedo }),
+  undoRedo: (cmd) => {
+    if (cmd === "undo") {
+      undoHistory.undo();
     } else {
-      return;
+      undoHistory.redo();
     }
-    opts.onOk(vals);
-  };
-  cancel.addEventListener("click", (e) => {
-    e.preventDefault();
-    done(false);
-  });
-  ok.addEventListener("click", (e) => {
-    e.preventDefault();
-    done(true);
-  });
-  box.addEventListener("mousedown", (e) => e.preventDefault());
-  box.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") {
-      e.preventDefault();
-      done(false);
-    } else if (e.key === "Enter" && (e.target as HTMLElement)?.tagName === "INPUT") {
-      e.preventDefault();
-      done(true);
-    }
-    // NOT: stopPropagation yok — document dinleyicileri çalışmaya devam etmeli.
-  });
-  document.body.appendChild(box);
-  openDialogEl = box;
-  document.addEventListener("mousedown", dialogOutside, true);
-  const fields = Object.values(inputs);
-  const focusEl = opts.focusSecond && fields.length > 1 ? fields[1] : fields[0];
-  focusEl?.focus();
-  focusEl?.select();
-}
+  },
+});
 
-// ---------- Biçim çubuğu + geri al/yinele ----------
-const formatbar = $("formatbar");
-const fmtButtons = Array.from(formatbar.querySelectorAll("button[data-cmd]")) as HTMLButtonElement[];
+attachSelectionHandlers({
+  getMode: () => mode,
+  getEditingIndex: () => editingIndex,
+  setEditingIndex: (i) => {
+    editingIndex = i;
+  },
+  getBlocks: () => blocks,
+  liveRoot,
+  getText: () => currentText,
+  applyDeleteResult: (text) => {
+    markLocalEdit();
+    currentText = text;
+    updateWordCount();
+    sendEdit(text);
+    syncCodeMirrorFromText();
+  },
+  commit: () => commitEdit(),
+  render: () => renderLive(),
+  record: (force) => undoHistory.record(force),
+});
 
-type Target = { kind: "cm" } | { kind: "ta"; el: HTMLTextAreaElement; index: number } | null;
-
-function getTarget(): Target {
-  if ((mode === "source" || mode === "split") && cmView) {
-    return { kind: "cm" };
-  }
-  if (mode === "live" && editingIndex !== null) {
-    const ta = liveRoot.querySelector("div.block.editing textarea") as HTMLTextAreaElement | null;
-    if (ta) {
-      return { kind: "ta", el: ta, index: editingIndex };
-    }
-  }
-  return null;
-}
-
-// Snapshot tabanlı geri al/yinele (Kaynak ve Canlı modda ortak çalışır).
-// Her anlık görüntü imleç çapası taşır (referans tekniğin wbr karşılığı);
-// toplam ~2MB aşılınca en eskiler atılır.
-interface HistEntry {
-  text: string;
-  anchor: number | null; // doküman offset'i
-}
-const hist: HistEntry[] = [];
-let hi = -1;
-let lastRecTime = 0;
+const findApi = attachFindbar({
+  getMode: () => mode,
+  getText: () => currentText,
+  record: (force) => undoHistory.record(force),
+  applyFullText: (t) => applyHistText(t),
+  roots: { live: liveRoot, reading: readingRoot, split: splitRoot },
+});
 
 // O anki imleç konumu (doküman offset'i)
 function currentAnchor(): number | null {
@@ -1038,37 +889,12 @@ function currentAnchor(): number | null {
   return null;
 }
 
-function histChars(): number {
-  let n = 0;
-  for (const h of hist) {
-    n += h.text.length;
-  }
-  return n;
-}
-
-function recordHist(force = false) {
-  const now = Date.now();
-  const top = hi >= 0 ? hist[hi] : undefined;
-  if (top && top.text === currentText) {
-    return;
-  }
-  if (!force && now - lastRecTime < 2500 && hi >= 0) {
-    return;
-  }
-  lastRecTime = now;
-  hist.length = hi + 1;
-  hist.push({ text: currentText, anchor: currentAnchor() });
-  hi = hist.length - 1;
-  while (hist.length > 100 || histChars() > 2000000) {
-    hist.shift();
-    hi--;
-  }
-  refreshBar();
-}
 function applyHistText(t: string, anchor: number | null = null) {
+  markLocalEdit();
   currentText = t;
   updateWordCount();
-  vscode.postMessage({ proto: PROTO, type: "edit", text: t });
+  post({ type: "edit", text: t, base: textBase });
+  dirty = false;
   editingIndex = null;
   syncCodeMirrorFromText();
   if (anchor !== null && cmView && (mode === "source" || mode === "split")) {
@@ -1083,438 +909,9 @@ function applyHistText(t: string, anchor: number | null = null) {
   } else if (mode === "split") {
     renderSplit();
   }
-  refreshBar();
-}
-function doUndo() {
-  if (hi < 0) {
-    return;
-  }
-  if (currentText !== hist[hi].text) {
-    // Henüz kaydedilmemiş yazım: anlık durumu kaydet, sonra geri git
-    hist.length = hi + 1;
-    hist.push({ text: currentText, anchor: currentAnchor() });
-    hi = hist.length - 1;
-  }
-  if (hi > 0) {
-    hi--;
-    applyHistText(hist[hi].text, hist[hi].anchor);
-  } else {
-    refreshBar();
-  }
-}
-function doRedo() {
-  if (hi < hist.length - 1) {
-    hi++;
-    applyHistText(hist[hi].text, hist[hi].anchor);
-  }
+  formatApi.refreshBar();
 }
 
-function cmWrap(before: string, after: string, placeholder: string) {
-  if (!cmView) {
-    return;
-  }
-  const r = cmView.state.selection.main;
-  const sel = cmView.state.doc.sliceString(r.from, r.to) || placeholder;
-  recordHist(true);
-  cmView.dispatch({
-    changes: { from: r.from, to: r.to, insert: before + sel + after },
-    selection: { anchor: r.from + before.length, head: r.from + before.length + sel.length },
-  });
-  cmView.focus();
-}
-
-function cmEachLine(fn: (text: string) => string | null) {
-  if (!cmView) {
-    return;
-  }
-  const doc = cmView.state.doc;
-  const r = cmView.state.selection.main;
-  const l1 = doc.lineAt(r.from).number;
-  const l2 = doc.lineAt(r.to).number;
-  const changes: { from: number; to: number; insert: string }[] = [];
-  for (let n = l1; n <= l2; n++) {
-    const line = doc.line(n);
-    const nt = fn(line.text);
-    if (nt !== null && nt !== line.text) {
-      changes.push({ from: line.from, to: line.to, insert: nt });
-    }
-  }
-  if (changes.length === 0) {
-    cmView.focus();
-    return;
-  }
-  recordHist(true);
-  cmView.dispatch({ changes });
-  cmView.focus();
-}
-
-function cmInsert(text: string, selAnchor?: number, selHead?: number) {
-  if (!cmView) {
-    return;
-  }
-  const r = cmView.state.selection.main;
-  recordHist(true);
-  cmView.dispatch({
-    changes: { from: r.from, to: r.to, insert: text },
-    selection:
-      selAnchor !== undefined
-        ? { anchor: r.from + selAnchor, head: r.from + (selHead ?? selAnchor) }
-        : undefined,
-  });
-  cmView.focus();
-}
-
-// (satır aç-kapa yardımcıları shared/md-utils içinden gelir)
-
-function taWrap(before: string, after: string, placeholder: string) {
-  const t = getTarget();
-  if (!t || t.kind !== "ta") {
-    return;
-  }
-  const el = t.el;
-  const s = el.selectionStart ?? 0;
-  const e = el.selectionEnd ?? 0;
-  const sel = el.value.slice(s, e) || placeholder;
-  recordHist(true);
-  el.setRangeText(before + sel + after, s, e, "end");
-  el.selectionStart = s + before.length;
-  el.selectionEnd = s + before.length + sel.length;
-  el.focus();
-  autoGrow(el);
-  replaceBlockSource(t.index, el.value);
-}
-
-function taEachLine(fn: (text: string) => string | null) {
-  const t = getTarget();
-  if (!t || t.kind !== "ta") {
-    return;
-  }
-  const el = t.el;
-  const s = el.selectionStart ?? 0;
-  const e = el.selectionEnd ?? 0;
-  const v = el.value;
-  const ls = v.slice(0, s).split("\n").length - 1;
-  const le = v.slice(0, e).split("\n").length - 1;
-  const arr = v.split("\n");
-  let changed = false;
-  for (let i = ls; i <= le; i++) {
-    const nt = fn(arr[i]);
-    if (nt !== null && nt !== arr[i]) {
-      arr[i] = nt;
-      changed = true;
-    }
-  }
-  if (!changed) {
-    el.focus();
-    return;
-  }
-  recordHist(true);
-  el.value = arr.join("\n");
-  el.focus();
-  autoGrow(el);
-  replaceBlockSource(t.index, el.value);
-}
-
-function taInsert(text: string, selAnchor?: number, selHead?: number) {
-  const t = getTarget();
-  if (!t || t.kind !== "ta") {
-    return;
-  }
-  const el = t.el;
-  const s = el.selectionStart ?? el.value.length;
-  const e = el.selectionEnd ?? s;
-  recordHist(true);
-  el.setRangeText(text, s, e, "end");
-  if (selAnchor !== undefined) {
-    el.selectionStart = s + selAnchor;
-    el.selectionEnd = s + (selHead ?? selAnchor);
-  }
-  el.focus();
-  autoGrow(el);
-  replaceBlockSource(t.index, el.value);
-}
-
-function selText(): string {
-  const t = getTarget();
-  if (!t) {
-    return "";
-  }
-  if (t.kind === "cm") {
-    if (!cmView) {
-      return "";
-    }
-    const r = cmView.state.selection.main;
-    return cmView.state.doc.sliceString(r.from, r.to);
-  }
-  const s = t.el.selectionStart ?? 0;
-  const e = t.el.selectionEnd ?? 0;
-  return t.el.value.slice(s, e);
-}
-
-function wrapSel(before: string, after: string, ph: string) {
-  const t = getTarget();
-  if (!t) {
-    return;
-  }
-  if (t.kind === "cm") {
-    cmWrap(before, after, ph);
-  } else {
-    taWrap(before, after, ph);
-  }
-}
-
-function eachLineSel(fn: (text: string) => string | null) {
-  const t = getTarget();
-  if (!t) {
-    return;
-  }
-  if (t.kind === "cm") {
-    cmEachLine(fn);
-  } else {
-    taEachLine(fn);
-  }
-}
-
-function insertAtCursor(text: string, selAnchor?: number, selHead?: number) {
-  const t = getTarget();
-  if (!t) {
-    return;
-  }
-  if (t.kind === "cm") {
-    cmInsert(text, selAnchor, selHead);
-  } else {
-    taInsert(text, selAnchor, selHead);
-  }
-}
-
-import type { TableOp } from "../shared/md-utils";
-
-const TABLE_TEMPLATE = "\n| Başlık 1 | Başlık 2 |\n| --- | --- |\n|  |  |\n";
-
-// Kaynak modda liste Enter davranışı (bulamazsa false → varsayılan Enter)
-function cmListEnter(view: EditorView): boolean {
-  if (!view.state.selection.main.empty) {
-    return false;
-  }
-  const head = view.state.selection.main.head;
-  const line = view.state.doc.lineAt(head);
-  const act = listEnterAction(line.text);
-  if (act.kind === "none") {
-    return false;
-  }
-  recordHist(true);
-  if (act.kind === "exit") {
-    view.dispatch({ changes: { from: line.from, to: line.to, insert: "" } });
-  } else if (act.kind === "outdent") {
-    const m = line.text.match(/^(\t| {1,2})/);
-    if (m) {
-      view.dispatch({ changes: { from: line.from, to: line.from + m[0].length, insert: "" } });
-    } else {
-      view.dispatch({ changes: { from: line.from, to: line.to, insert: "" } });
-    }
-  } else {
-    const at = head - line.from;
-    const marker = act.marker ?? "";
-    view.dispatch({
-      changes: {
-        from: line.from,
-        to: line.to,
-        insert: line.text.slice(0, at) + "\n" + marker + line.text.slice(at),
-      },
-      selection: { anchor: line.from + at + 1 + marker.length },
-    });
-  }
-  view.focus();
-  return true;
-}
-
-function tableOp(op: TableOp) {
-  const t = getTarget();
-  if (!t) {
-    return;
-  }
-  if (t.kind === "cm") {
-    if (!cmView) {
-      return;
-    }
-    const doc = cmView.state.doc;
-    const cur = doc.lineAt(cmView.state.selection.main.head).number;
-    let s = cur;
-    let e = cur;
-    const isT = (n: number) => n >= 1 && n <= doc.lines && doc.line(n).text.trim().startsWith("|");
-    while (isT(s - 1)) {
-      s--;
-    }
-    while (isT(e + 1)) {
-      e++;
-    }
-    const src = doc.sliceString(doc.line(s).from, doc.line(e).to);
-    const out = editTable(src, op);
-    if (out === null) {
-      return;
-    }
-    recordHist(true);
-    cmView.dispatch({ changes: { from: doc.line(s).from, to: doc.line(e).to, insert: out } });
-    cmView.focus();
-    return;
-  }
-  const out = editTable(t.el.value, op);
-  if (out === null) {
-    return;
-  }
-  recordHist(true);
-  t.el.value = out;
-  t.el.focus();
-  autoGrow(t.el);
-  replaceBlockSource(t.index, out);
-}
-
-function runFormat(cmd: string) {
-  if (cmd === "undo") {
-    doUndo();
-    return;
-  }
-  if (cmd === "redo") {
-    doRedo();
-    return;
-  }
-  if (!getTarget()) {
-    return;
-  }
-  switch (cmd) {
-    case "bold":
-      wrapSel("**", "**", "metin");
-      break;
-    case "italic":
-      wrapSel("*", "*", "metin");
-      break;
-    case "strike":
-      wrapSel("~~", "~~", "metin");
-      break;
-    case "heading-menu": {
-      const btn = fmtButtons.find((x) => x.dataset.cmd === "heading-menu");
-      openMenu(
-        btn ?? document.body,
-        [1, 2, 3, 4, 5, 6]
-          .map((n) => ({
-            label: `H${n}`,
-            title: `Başlık ${n}`,
-            run: () => eachLineSel(setHeadingLevel(n)),
-          }))
-          .concat([{ label: "Temizle", title: "Başlığı kaldır", run: () => eachLineSel(toggleHeadingLine) }])
-      );
-      break;
-    }
-    case "table-menu": {
-      const btn = fmtButtons.find((x) => x.dataset.cmd === "table-menu");
-      openMenu(btn ?? document.body, [
-        { label: "Tablo Ekle", run: () => insertAtCursor(TABLE_TEMPLATE) },
-        { label: "+ Satır", run: () => tableOp("add-row") },
-        { label: "− Satır", run: () => tableOp("del-row") },
-        { label: "+ Sütun", run: () => tableOp("add-col") },
-        { label: "− Sütun", run: () => tableOp("del-col") },
-      ]);
-      break;
-    }
-    case "image": {
-      const label = selText() || "açıklama";
-      openDialog({
-        title: "Görsel ekle",
-        fields: [
-          { key: "alt", label: "Açıklama", value: label },
-          { key: "src", label: "Yol", value: "resim.png" },
-        ],
-        okLabel: "Ekle",
-        focusSecond: true,
-        onOk: (vals) => {
-          const a = vals.alt.trim() || "açıklama";
-          const s = vals.src.trim() || "resim.png";
-          insertAtCursor(`![${a}](${s})`);
-        },
-      });
-      break;
-    }
-    case "bullet":
-      eachLineSel(togglePrefix("- "));
-      break;
-    case "numbered":
-      eachLineSel(togglePrefix("1. "));
-      break;
-    case "task":
-      eachLineSel(toggleTaskLine);
-      break;
-    case "quote":
-      eachLineSel(togglePrefix("> "));
-      break;
-    case "code":
-      if (selText().includes("\n")) {
-        wrapSel("```\n", "\n```", "kod");
-      } else {
-        wrapSel("`", "`", "kod");
-      }
-      break;
-    case "link": {
-      const label = selText() || "metin";
-      openDialog({
-        title: "Bağlantı ekle",
-        fields: [
-          { key: "text", label: "Metin", value: label },
-          { key: "url", label: "Adres", value: "https://" },
-        ],
-        okLabel: "Ekle",
-        focusSecond: true,
-        onOk: (vals) => {
-          const t = vals.text.trim() || "metin";
-          const u = vals.url.trim() || "https://";
-          const ins = `[${t}](${u})`;
-          // URL'yi seçili bırak ki üstüne yazılabilsin
-          const pos = t.length + 3;
-          const tgt = getTarget();
-          if (!tgt) {
-            return;
-          }
-          if (tgt.kind === "cm") {
-            cmInsert(ins, pos, pos + u.length);
-          } else {
-            taInsert(ins, pos, pos + u.length);
-          }
-        },
-      });
-      break;
-    }
-  }
-  refreshBar();
-}
-
-function refreshBar() {
-  const show = mode !== "reading";
-  formatbar.classList.toggle("hidden", !show);
-  if (!show) {
-    return;
-  }
-  const t = getTarget();
-  const canUndo = hi > 0 || (hi >= 0 && currentText !== hist[hi].text);
-  const canRedo = hi < hist.length - 1;
-  for (const b of fmtButtons) {
-    const cmd = b.dataset.cmd || "";
-    if (cmd === "undo") {
-      b.disabled = !canUndo;
-    } else if (cmd === "redo") {
-      b.disabled = !canRedo;
-    } else {
-      b.disabled = t === null;
-    }
-  }
-}
-
-fmtButtons.forEach((b) => {
-  // mousedown'da odağı çalma: canlı blok editi kapanmasın, komut hedefsiz kalmasın
-  b.addEventListener("mousedown", (e) => e.preventDefault());
-  b.addEventListener("click", (e) => {
-    e.preventDefault();
-    runFormat(b.dataset.cmd || "");
-  });
-});
 
 // ---------- Kod teması (highlight.js renkleri) ----------
 let hljsStyleEl: HTMLStyleElement | null = null;
@@ -1530,499 +927,8 @@ function applyHljsTheme() {
   }
 }
 
-// ---------- Canlı modda bloklar-arası toplu silme ----------
-// Not: document seviyesinde dinlenir — sürükle-seç sonrası odak body'de olur,
-// liveRoot'a bağlı olsaydı tuş olayı hiç ulaşmazdı
-document.addEventListener("keydown", (e) => {
-  if (mode !== "live") {
-    return; // okuma salt okunur, split'te kaynak panelden silinir
-  }
-  if (e.key !== "Delete" && e.key !== "Backspace") {
-    return;
-  }
-  const sel = window.getSelection();
-  if (!sel || sel.isCollapsed || sel.rangeCount === 0) {
-    return;
-  }
-  // Aralığı dondur: aşağıdaki blur() bazı ortamlarda canlı seçimi sıfırlar,
-  // klonlanmış aralık düğümlere tutunmaya devam eder.
-  const range = sel.getRangeAt(0).cloneRange();
-  const anchorNode = range.startContainer;
-  const focusNode = range.endContainer;
-  // Seçim bir girdi alanındaysa native davranışa bırak (textarea, bulma kutusu,
-  // CM arama kutusu). Açık edit kutusu dahil: içerideki seçim oraya aittir.
-  const inField = (n: Node | null): boolean => {
-    const el = (n as HTMLElement)?.parentElement;
-    return !!el?.closest?.("input, textarea, [contenteditable='true'], #cm-host");
-  };
-  if (inField(anchorNode) || inField(focusNode)) {
-    return;
-  }
-  // Odak yabancı bir girdideyse (örn. seçim önizlemede, odak bulma kutusunda)
-  // önce odağı boşa al; yoksa native silme de çalışıp çift işlem olur.
-  // Açık edit kutusu hariç: o aşağıda commit ile kapanır.
-  const ae = document.activeElement as HTMLElement | null;
-  if (
-    ae &&
-    ae !== document.body &&
-    !(ae instanceof HTMLTextAreaElement && ae.closest?.("div.block.editing")) &&
-    (ae.tagName === "INPUT" || ae.tagName === "BUTTON" || ae.isContentEditable)
-  ) {
-    ae.blur();
-  }
-  if (!liveRoot.contains(anchorNode) || !liveRoot.contains(focusNode)) {
-    return;
-  }
-  const contained = (el: HTMLElement): boolean => {
-    try {
-      const r2 = document.createRange();
-      r2.selectNodeContents(el);
-      return (
-        range.compareBoundaryPoints(Range.START_TO_START, r2) <= 0 &&
-        range.compareBoundaryPoints(Range.END_TO_END, r2) >= 0
-      );
-    } catch {
-      return false;
-    }
-  };
-  const blockDivOf = (n: Node | null): { div: HTMLElement; idx: number } | null => {
-    const el = (n as HTMLElement)?.parentElement;
-    const host = el?.closest?.("div.block[data-index]:not(.editing)") as HTMLElement | null;
-    if (!host) {
-      return null;
-    }
-    const idx = Number(host.dataset.index);
-    if (Number.isNaN(idx) || !blocks[idx]) {
-      return null;
-    }
-    return { div: host, idx };
-  };
-  const victims: number[] = [];
-  liveRoot.querySelectorAll("div.block:not(.editing)").forEach((node) => {
-    const div = node as HTMLElement;
-    const idx = Number(div.dataset.index);
-    if (Number.isNaN(idx) || !blocks[idx]) {
-      return;
-    }
-    if (contained(div)) {
-      victims.push(idx);
-    }
-  });
-  const victimSet = new Set(victims);
-  // Kenar bloklarda kısmi seçim: liste öğeleri (<li>) satır satır eşlenir.
-  // Böylece "orta + komşu öğeler" gibi seçimlerde liste içi silinir.
-  const edgeSpans: Array<[number, number]> = [];
-  const mapEdgeLis = (info: { div: HTMLElement; idx: number } | null) => {
-    if (!info || victimSet.has(info.idx)) {
-      return;
-    }
-    const b = blocks[info.idx];
-    const srcLines = b.source.split("\n");
-    if (!srcLines.some((l) => /^\s*(?:[-*+]|\d+[.)])(?:\s|$)/.test(l))) {
-      return; // liste bloğu değil
-    }
-    const items = listItemLineSpans(srcLines);
-    const allLi = Array.from(info.div.querySelectorAll("li"));
-    if (allLi.length !== items.length) {
-      return; // yapı uyuşmazsa güvenli tarafta kal
-    }
-    allLi.forEach((liNode, k) => {
-      if (contained(liNode as HTMLElement)) {
-        const [s, e] = items[k];
-        edgeSpans.push([b.startLine + s, b.startLine + e]);
-      }
-    });
-  };
-  mapEdgeLis(blockDivOf(anchorNode));
-  mapEdgeLis(blockDivOf(focusNode));
-  if (victims.length === 0 && edgeSpans.length === 0) {
-    // Kısmi seçim: çapa bloğu düzenlemeye aç (ikinci Delete içeride çalışır)
-    const info = blockDivOf(anchorNode);
-    if (info && editingIndex !== info.idx) {
-      e.preventDefault();
-      if (editingIndex !== null) {
-        commitEdit();
-      }
-      editingIndex = info.idx;
-      renderLive();
-      // Bayat seçimi temizle: düğümler yıkıldı, ikinci Delete TA içinde çalışsın
-      sel.removeAllRanges();
-    }
-    return;
-  }
-  e.preventDefault();
-  // Seçim varken açık edit varsa önce kapat (metin zaten senkron, harita tazelenir)
-  if (editingIndex !== null) {
-    commitEdit();
-  }
-  recordHist(true);
-  const spans: Array<[number, number]> = victims
-    .map((i) => blocks[i])
-    .filter((b) => !!b)
-    .map((b) => [b.startLine, b.endLine] as [number, number])
-    .concat(edgeSpans);
-  const lines = currentText.split("\n");
-  const removed = new Array<boolean>(lines.length).fill(false);
-  for (const [s, en] of spans) {
-    for (let i = Math.max(0, s); i < Math.min(en, lines.length); i++) {
-      removed[i] = true;
-    }
-  }
-  currentText = joinKeptLines(lines, removed);
-  updateWordCount();
-  sendEdit(currentText);
-  syncCodeMirrorFromText();
-  sel.removeAllRanges();
-  renderLive();
-});
 
-// (joinKeptLines / isParaLike shared/md-utils içinden gelir)
 
-// ---------- Bulma çubuğu (Canlı/Okuma/Split önizleme) ----------
-const findbar = $("findbar");
-const findInput = $("find-input") as HTMLInputElement;
-const findCount = $("find-count");
-const replaceRow = $("replace-row");
-const replaceInput = $("replace-input") as HTMLInputElement;
-let findOpen = false;
-let findMarks: HTMLElement[] = [];
-let findIdx = -1;
-let findCase = false;
-let findWord = false;
-let findRegex = false;
-let replaceOpen = false;
-
-function currentPreviewRoot(): HTMLElement | null {
-  if (mode === "live") {
-    return liveRoot;
-  }
-  if (mode === "reading") {
-    return readingRoot;
-  }
-  if (mode === "split") {
-    return splitRoot;
-  }
-  return null;
-}
-
-function openFind() {
-  findOpen = true;
-  findbar.classList.remove("hidden");
-  findInput.focus();
-  findInput.select();
-  updateFind();
-}
-
-function closeFind() {
-  findOpen = false;
-  findbar.classList.add("hidden");
-  clearFindMarks();
-}
-
-function clearFindMarks() {
-  document.querySelectorAll("mark.find-hit").forEach((node) => {
-    const m = node as HTMLElement;
-    const parent = m.parentNode;
-    if (!parent) {
-      return;
-    }
-    parent.replaceChild(document.createTextNode(m.textContent || ""), m);
-    parent.normalize();
-  });
-  findMarks = [];
-  findIdx = -1;
-  updateFindCount();
-}
-
-function buildFindRegex(): RegExp | null {
-  return makeFindRegex(findInput.value, {
-    caseSensitive: findCase,
-    wholeWord: findWord,
-    regex: findRegex,
-  });
-}
-
-function updateFind() {
-  clearFindMarks();
-  const q = findInput.value;
-  if (!q) {
-    return;
-  }
-  const root = currentPreviewRoot();
-  if (!root) {
-    return;
-  }
-  const re = buildFindRegex();
-  if (!re) {
-    findCount.textContent = "hatalı ifade";
-    return;
-  }
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-  const nodes: Text[] = [];
-  let n: Node | null;
-  while ((n = walker.nextNode())) {
-    nodes.push(n as Text);
-  }
-  for (const node of nodes) {
-    const text = node.textContent || "";
-    re.lastIndex = 0;
-    let m: RegExpExecArray | null;
-    let i = 0;
-    let found = false;
-    const frag = document.createDocumentFragment();
-    while ((m = re.exec(text))) {
-      found = true;
-      frag.appendChild(document.createTextNode(text.slice(i, m.index)));
-      const mark = document.createElement("mark");
-      mark.className = "find-hit";
-      mark.textContent = m[0].length > 0 ? m[0] : text.slice(m.index, m.index + 1) || " ";
-      frag.appendChild(mark);
-      findMarks.push(mark);
-      i = m.index + (m[0].length || 1);
-      if (m[0].length === 0) {
-        re.lastIndex = i;
-      }
-    }
-    if (!found) {
-      continue;
-    }
-    frag.appendChild(document.createTextNode(text.slice(i)));
-    node.parentNode?.replaceChild(frag, node);
-  }
-  if (findMarks.length > 0) {
-    findIdx = 0;
-    showFindMark(0);
-  }
-  updateFindCount();
-}
-
-// Doküman üzerindeki eşleşmeler (Değiştir işlemleri için, kaynak offset'li)
-function docMatches(): Array<[number, number]> {
-  const re = buildFindRegex();
-  if (!re) {
-    return [];
-  }
-  re.lastIndex = 0;
-  const out: Array<[number, number]> = [];
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(currentText))) {
-    if (m[0].length === 0) {
-      re.lastIndex++;
-      continue;
-    }
-    out.push([m.index, m.index + m[0].length]);
-  }
-  return out;
-}
-
-function applyReplaceAll() {
-  const re = buildFindRegex();
-  if (!re) {
-    return;
-  }
-  recordHist(true);
-  // String.replace $1, $& gibi desenleri kendi genişletir
-  applyHistText(currentText.replace(re, replaceInput.value));
-}
-
-function applyReplaceOne() {
-  const all = docMatches();
-  if (all.length === 0) {
-    return;
-  }
-  const re = buildFindRegex();
-  if (!re) {
-    return;
-  }
-  const [s, e] = all[((findIdx % all.length) + all.length) % all.length];
-  const single = new RegExp(`^(?:${re.source})$`, re.flags.replace("g", ""));
-  const rep = currentText.slice(s, e).replace(single, replaceInput.value);
-  recordHist(true);
-  applyHistText(currentText.slice(0, s) + rep + currentText.slice(e));
-}
-
-function refreshFindButtons() {
-  findbar.querySelectorAll("button[data-ffind]").forEach((node) => {
-    const b = node as HTMLButtonElement;
-    const cmd = b.dataset.ffind || "";
-    b.classList.toggle(
-      "on",
-      (cmd === "case" && findCase) || (cmd === "word" && findWord) || (cmd === "regex" && findRegex)
-    );
-  });
-}
-
-function updateFindCount() {
-  if (!findInput.value) {
-    findCount.textContent = "";
-    return;
-  }
-  findCount.textContent =
-    findMarks.length === 0 ? "bulunamadı" : `${findIdx + 1} / ${findMarks.length}`;
-}
-
-function showFindMark(i: number) {
-  findMarks.forEach((m, j) => m.classList.toggle("current", i === j));
-  const el = findMarks[i];
-  if (el) {
-    el.scrollIntoView({ block: "center" });
-  }
-}
-
-function stepFind(dir: 1 | -1) {
-  if (findMarks.length === 0) {
-    return;
-  }
-  findIdx = (findIdx + dir + findMarks.length) % findMarks.length;
-  showFindMark(findIdx);
-  updateFindCount();
-}
-
-findInput.addEventListener(
-  "input",
-  debounce(() => updateFind(), 150)
-);
-findInput.addEventListener("keydown", (e) => {
-  if (e.key === "Enter") {
-    e.preventDefault();
-    stepFind(e.shiftKey ? -1 : 1);
-  } else if (e.key === "Escape") {
-    e.preventDefault();
-    closeFind();
-  }
-  // NOT: stopPropagation yok — örn. Delete document dinleyicisine ulaşmalı.
-});
-findbar.querySelectorAll("button[data-ffind]").forEach((node) => {
-  const b = node as HTMLButtonElement;
-  b.addEventListener("mousedown", (e) => e.preventDefault());
-  b.addEventListener("click", (e) => {
-    e.preventDefault();
-    const cmd = b.dataset.ffind || "";
-    if (cmd === "close") {
-      closeFind();
-    } else if (cmd === "prev") {
-      stepFind(-1);
-    } else if (cmd === "next") {
-      stepFind(1);
-    } else if (cmd === "case") {
-      findCase = !findCase;
-      refreshFindButtons();
-      updateFind();
-    } else if (cmd === "word") {
-      findWord = !findWord;
-      refreshFindButtons();
-      updateFind();
-    } else if (cmd === "regex") {
-      findRegex = !findRegex;
-      refreshFindButtons();
-      updateFind();
-    } else if (cmd === "toggle-replace") {
-      replaceOpen = !replaceOpen;
-      replaceRow.classList.toggle("hidden", !replaceOpen);
-      if (replaceOpen) {
-        replaceInput.focus();
-      } else {
-        findInput.focus();
-      }
-    } else if (cmd === "replace") {
-      applyReplaceOne();
-    } else if (cmd === "replace-all") {
-      applyReplaceAll();
-    }
-  });
-});
-
-// ---------- Markdown olarak kopyalama (canlı önizleme) ----------
-document.addEventListener("copy", (e) => {
-  // Açık edit kutusu varsa native kopya zaten markdown'dır
-  if (editingIndex !== null) {
-    return;
-  }
-  if (mode !== "live") {
-    return;
-  }
-  const sel = window.getSelection();
-  if (!sel || sel.isCollapsed || sel.rangeCount === 0) {
-    return;
-  }
-  const ae = document.activeElement as HTMLElement | null;
-  if (
-    ae &&
-    (ae.tagName === "INPUT" ||
-      ae.tagName === "TEXTAREA" ||
-      (ae.closest && ae.closest("#cm-host")))
-  ) {
-    return;
-  }
-  if (!liveRoot.contains(sel.anchorNode) || !liveRoot.contains(sel.focusNode)) {
-    return;
-  }
-  const range = sel.getRangeAt(0);
-  const victims: number[] = [];
-  liveRoot.querySelectorAll("div.block:not(.editing)").forEach((node) => {
-    const div = node as HTMLElement;
-    const idx = Number(div.dataset.index);
-    if (Number.isNaN(idx) || !blocks[idx]) {
-      return;
-    }
-    try {
-      const r2 = document.createRange();
-      r2.selectNodeContents(div);
-      if (
-        range.compareBoundaryPoints(Range.START_TO_START, r2) <= 0 &&
-        range.compareBoundaryPoints(Range.END_TO_END, r2) >= 0
-      ) {
-        victims.push(idx);
-      }
-    } catch {
-      /* yoksay */
-    }
-  });
-  if (victims.length === 0) {
-    // Tek blok tam metin seçimi mi? (örn. başlığa üç kez tıklandı)
-    const anchorEl = sel.anchorNode?.parentElement;
-    const host = anchorEl?.closest?.("div.block[data-index]:not(.editing)") as HTMLElement | null;
-    if (host && host.contains(sel.focusNode)) {
-      const idx = Number(host.dataset.index);
-      const b = blocks[idx];
-      const norm = (s: string) => s.replace(/\s+/g, " ").trim();
-      if (b && norm(sel.toString()) === norm(host.textContent || "") && norm(host.textContent || "") !== "") {
-        victims.push(idx);
-      }
-    }
-  }
-  if (victims.length === 0) {
-    // Tek başlık bloğunda kısmi seçim: işaretleri onararak kopyala
-    // ("Başlık"ın yarısı seçilse bile pano "# ..." olarak gider)
-    const anchorEl2 = sel.anchorNode?.parentElement;
-    const host2 = anchorEl2?.closest?.("div.block[data-index]:not(.editing)") as HTMLElement | null;
-    if (host2 && host2.contains(sel.focusNode)) {
-      const b2 = blocks[Number(host2.dataset.index)];
-      const hm = b2 ? b2.source.match(/^(#{1,6}\s+)/) : null;
-      const txt = sel.toString();
-      if (b2 && hm && txt.trim() !== "" && e.clipboardData) {
-        e.preventDefault();
-        e.clipboardData.setData("text/plain", hm[0] + txt.replace(/^#+\s*/, ""));
-        return;
-      }
-    }
-  }
-  if (victims.length === 0 || !e.clipboardData) {
-    return;
-  }
-  e.preventDefault();
-  const parts = victims
-    .map((i) => blocks[i].source.replace(/(?:\n[ \t]*)+$/, "").trim())
-    .filter((s) => s !== "");
-  e.clipboardData.setData("text/plain", parts.join("\n\n").replace(/\n{3,}/g, "\n\n"));
-  try {
-    const tmp = document.createElement("div");
-    tmp.appendChild(range.cloneContents());
-    e.clipboardData.setData("text/html", tmp.innerHTML);
-  } catch {
-    /* html olmazsa düz metin yeter */
-  }
-});
 
 // ---------- Mod yönetimi ----------
 function setMode(m: Mode) {
@@ -2044,9 +950,9 @@ function setMode(m: Mode) {
   splitPreview.classList.toggle("hidden", m !== "split");
   liveWrap.classList.toggle("hidden", m !== "live");
   readingWrap.classList.toggle("hidden", m !== "reading");
-  if (m === "source" && findOpen) {
+  if (m === "source" && findApi.isOpen()) {
     // Kaynak modda CodeMirror paneli devralır
-    closeFind();
+    findApi.closeFind();
   }
   if (m === "source" || m === "split") {
     syncCodeMirrorFromText();
@@ -2059,10 +965,10 @@ function setMode(m: Mode) {
   } else {
     renderReading();
   }
-  if (findOpen) {
-    updateFind();
+  if (findApi.isOpen()) {
+    findApi.refresh();
   }
-  refreshBar();
+  formatApi.refreshBar();
 }
 
 btnSource.addEventListener("click", () => setMode("source"));
@@ -2081,7 +987,7 @@ document.addEventListener("keydown", (e) => {
     const cmHandles = mode === "source" || (mode === "split" && !!cmView?.hasFocus);
     if (!cmHandles) {
       e.preventDefault();
-      openFind();
+      findApi.openFind();
     }
     return;
   }
@@ -2138,7 +1044,13 @@ window.addEventListener("message", (event) => {
     case "update": {
       const text: string = msg.text ?? "";
       isDirty = !!msg.isDirty;
+      const incomingVersion: number =
+        typeof msg.version === "number" ? msg.version : textBase;
       if (text === currentText) {
+        // Yankı: sunucu yazımızı işledi
+        textBase = incomingVersion;
+        dirty = false;
+        externalPending = null;
         updateWordCount();
         break;
       }
@@ -2149,18 +1061,26 @@ window.addEventListener("message", (event) => {
         editingIndex = null;
       }
       const wasEditing = editingIndex !== null;
-      currentText = text;
-      // Geri-al zincirinin başlangıç noktası
-      if (hist.length === 0) {
-        hist.push({ text, anchor: null });
-        hi = 0;
+      const cmTyping =
+        cmView !== null && cmView.hasFocus && (mode === "source" || mode === "split");
+      if (wasEditing || cmTyping || dirty) {
+        // Gönderilmemiş yerel yazım var: üzerine yazma; sonraki gönderi
+        // doğru tabanla (textBase) birleştirilir. Harita da bozulmaz.
+        externalPending = { text, version: incomingVersion };
+        updateWordCount();
+        break;
       }
+      currentText = text;
+      textBase = incomingVersion;
+      dirty = false;
+      externalPending = null;
+      // Geri-al zincirinin başlangıç noktası
+      undoHistory.seed(text);
       updateWordCount();
       if (!cmView) {
         initCodeMirror();
       } else {
         // Kaynak/Split modda kullanıcı yazarken imleci ve kaydırmayı bozma
-        const cmTyping = cmView.hasFocus && (mode === "source" || mode === "split");
         if (!cmTyping) {
           syncCodeMirrorFromText();
         }
@@ -2179,6 +1099,27 @@ window.addEventListener("message", (event) => {
       } else if (!cmView?.hasFocus) {
         syncCodeMirrorFromText();
       }
+      break;
+    }
+    case "conflict": {
+      // Sunucu tabanı tutmadı: diskteki metin korunur, görünüm ona geçer
+      const text: string = msg.text ?? currentText;
+      const version: number = typeof msg.version === "number" ? msg.version : textBase;
+      currentText = text;
+      textBase = version;
+      dirty = false;
+      externalPending = null;
+      editingIndex = null;
+      updateWordCount();
+      syncCodeMirrorFromText();
+      if (mode === "live") {
+        renderLive();
+      } else if (mode === "reading") {
+        renderReading();
+      } else if (mode === "split") {
+        renderSplit();
+      }
+      formatApi.refreshBar();
       break;
     }
     case "reveal-line": {
@@ -2233,5 +1174,5 @@ window.addEventListener("message", (event) => {
   applyHljsTheme();
   setMode(mode);
   updateWordCount();
-  vscode.postMessage({ proto: PROTO, type: "ready" });
+  post({ type: "ready" });
 })();

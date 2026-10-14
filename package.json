@@ -119,6 +119,7 @@
     "watch": "node esbuild.js --watch",
     "vscode:prepublish": "node esbuild.js --production",
     "lint": "tsc --noEmit",
+    "pretest": "node esbuild.js --only=test-bundle",
     "test": "tsc -p tsconfig.test.json && node --test \"dist-test/test/**/*.test.js\""
   },
   "devDependencies": {

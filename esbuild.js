@@ -21,12 +21,25 @@ const extConfig = {
   minify: production,
 };
 
-/** Webview (browser) */
+/** Webview test paketi (jsdom ESM modülleri çalıştırmaz; testler IIFE kullanır) */
+const testBundleConfig = {
+  entryPoints: ["src/webview/main.ts"],
+  bundle: true,
+  outfile: "media/test-bundle.js",
+  format: "iife",
+  platform: "browser",
+  target: ["es2020"],
+  sourcemap: false,
+  minify: false,
+  loader: { ".css": "text" },
+};
+/** Webview (browser, ES modülü + lazy chunk'lar) */
 const webviewConfig = {
   entryPoints: ["src/webview/main.ts"],
   bundle: true,
-  outfile: "media/webview.js",
-  format: "iife",
+  outdir: "media/webview",
+  format: "esm",
+  splitting: true,
   platform: "browser",
   target: ["es2020"],
   // NOT: sourcemap kapalı — 19 MB'lık map üretimi esbuild'i Windows'ta
@@ -35,6 +48,22 @@ const webviewConfig = {
   minify: production,
   loader: { ".css": "text" },
 };
+
+// Tek tek silme (fs.rmSync bu makinede sessizce işlemiyor, kullanılmaz)
+function rmDirSync(dir) {
+  if (!fs.existsSync(dir)) {
+    return;
+  }
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const p = path.join(dir, entry.name);
+    if (entry.isDirectory() && !entry.isSymbolicLink()) {
+      rmDirSync(p);
+    } else {
+      fs.unlinkSync(p);
+    }
+  }
+  fs.rmdirSync(dir);
+}
 
 // Tek tek dosya kopyalar (fs.cpSync bu makinede natif çöküyor, kullanılmaz)
 function copyDirSync(src, dst) {
@@ -59,7 +88,7 @@ function copyKatexAssets() {
     }
     const fontsSrc = "node_modules/katex/dist/fonts";
     if (fs.existsSync(fontsSrc)) {
-      fs.rmSync("media/fonts", { recursive: true, force: true });
+      rmDirSync("media/fonts");
       copyDirSync(fontsSrc, "media/fonts");
     }
   } catch (err) {
@@ -81,6 +110,12 @@ function spawnBuild(part, extraArgs) {
 
 async function run() {
   copyKatexAssets();
+  // Eski chunk'lar (dev/prod karışık hash'ler) temizlenir
+  try {
+    rmDirSync("media/webview");
+  } catch {
+    /* yoksay */
+  }
   const prodArgs = production ? ["--production"] : [];
   if (watch && !only) {
     // İzleme modunda iki parça ayrı process'te çalışır
@@ -113,6 +148,9 @@ async function run() {
   }
   if (!only || only === "webview") {
     await esbuild.build(webviewConfig);
+  }
+  if (only === "test-bundle") {
+    await esbuild.build(testBundleConfig);
   }
   console.log("Build complete.");
 }

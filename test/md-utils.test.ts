@@ -20,6 +20,7 @@ import {
   setHeadingLevel,
   listItemLineSpans,
   listEnterAction,
+  mergeTexts,
 } from "../src/shared/md-utils.js";
 
 describe("togglePrefix", () => {
@@ -250,6 +251,29 @@ describe("listEnterAction", () => {
   it("liste dışı ve sürüm numarası etkilenmez", () => {
     assert.deepEqual(listEnterAction("düz yazı").kind, "none");
     assert.deepEqual(listEnterAction("1.2.3").kind, "none");
+  });
+});
+
+describe("mergeTexts", () => {
+  it("hızlı yollar", () => {
+    assert.equal(mergeTexts("a", "a", "a"), "a");
+    assert.equal(mergeTexts("a", "b", "a"), "b");
+    assert.equal(mergeTexts("a", "a", "b"), "b");
+  });
+  it("ayrık satırlar birleşir", () => {
+    const base = "1\n2\n3\n4\n5";
+    const disk = "1\n2x\n3\n4\n5";
+    const gelen = "1\n2\n3\n4\n5x";
+    assert.equal(mergeTexts(base, disk, gelen), "1\n2x\n3\n4\n5x");
+  });
+  it("iki uca ekleme birleşir", () => {
+    assert.equal(mergeTexts("orta", "üst\norta", "orta\nalt"), "üst\norta\nalt");
+  });
+  it("aynı satır çakışır", () => {
+    assert.equal(mergeTexts("a\nb\nc", "a\nB1\nc", "a\nB2\nc"), null);
+  });
+  it("aynı noktaya ekleme çakışır", () => {
+    assert.equal(mergeTexts("a\nc", "a\nX\nc", "a\nY\nc"), null);
   });
 });
 
