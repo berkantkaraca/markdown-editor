@@ -1,0 +1,13 @@
+{
+  "description": "A continuous WYSIWYG Markdown editor by berkantkaraca. Live, Source, Split and Reading modes.",
+  "view.karacaOutline": "Karaca Outline",
+  "view.karacaBacklinks": "Karaca Backlinks",
+  "karaca-md.openLive": "Karaca MD: Open in Live Editor",
+  "karaca-md.showSource": "Karaca MD: Open in Default Text Editor",
+  "karaca-md.newNote": "Karaca MD: Create Quick Note",
+  "karaca-md.dailyNote": "Karaca MD: Open Daily Note",
+  "config.defaultMode": "Default mode when opening a Markdown file.",
+  "config.wordWrap": "Wrap lines in the source editor.",
+  "config.lineNumbers": "Show line numbers in the source editor.",
+  "config.language": "Editor interface language. English by default; Turkish is optional."
+}

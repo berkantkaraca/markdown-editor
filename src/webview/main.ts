@@ -1,7 +1,9 @@
+import { t } from "./i18n";
+import { setLanguage, localizeChrome } from "./i18n";
 import codeTheme from "./code-theme.css";
 import { DocumentEditor } from "./document-editor";
 import { SourceEditor } from "./source-editor";
-import { DocumentSync, type LocalDraft } from "./document-sync";
+import { DocumentSync, type LocalDraft, type SyncState } from "./document-sync";
 import { renderPreview, runMermaid, refreshDiagrams } from "./preview";
 import { attachFormatbar } from "./format";
 import { attachFindbar } from "./search";
@@ -26,9 +28,20 @@ let wrap = true, numbers = true;
 let syncingScroll = false;
 let previewTimer: ReturnType<typeof setTimeout>;
 let imageSequence = 0;
+let syncState: SyncState = "idle";
 const images = new Map<string, string>();
 const pendingImages = new Map<string, "live" | "source">();
 const liveRoot = $("live-root"), readingRoot = $("reading-root"), splitRoot = $("split-root");
+function updateLanguage(language: unknown): void {
+  setLanguage(language);
+  document.documentElement.lang = language === "tr" ? "tr" : "en";
+  for (const id of ["formatbar", "findbar", "back-to-live", "sync-retry"]) localizeChrome($(id));
+  ($("ui-language") as HTMLSelectElement).value = document.documentElement.lang;
+  for (const node of liveRoot.querySelectorAll<HTMLElement>(".preserved-content")) node.title = t("Düzenlemek için çift tıklayın");
+  $("sync-message").textContent = syncState === "blocked" ? t("Kayıt tamamlanamadı. Taslağınız korundu.") : t("Kaydı yeniden deniyoruz…");
+}
+updateLanguage("en");
+$("ui-language").addEventListener("change", () => post({ type: "language", language: ($("ui-language") as HTMLSelectElement).value }));
 let toolbar: ReturnType<typeof attachFormatbar> | undefined;
 let find: ReturnType<typeof attachFindbar> | undefined;
 
@@ -48,13 +61,14 @@ const sync = new DocumentSync({
     post(draft ? { type: "draft", draft } : { type: "draft-clear", expectedText: sync.text });
   },
   stateChanged: (state) => {
+    syncState = state;
     $("sync-alert").classList.toggle("hidden", state !== "blocked" && state !== "retrying");
-    $("sync-message").textContent = state === "blocked" ? "Kayıt tamamlanamadı. Taslağınız korundu." : "Kaydı yeniden deniyoruz…";
+    $("sync-message").textContent = state === "blocked" ? t("Kayıt tamamlanamadı. Taslağınız korundu.") : t("Kaydı yeniden deniyoruz…");
     $("sync-retry").classList.toggle("hidden", state !== "blocked");
   },
   recover: (draft) => {
     showRecovery(draft);
-    post({ type: "error", message: "Dış değişiklikle çakışan yerel taslak korundu. Üstteki Taslağı geri yükle düğmesiyle açabilirsiniz." });
+    post({ type: "error", message: t("Dış değişiklikle çakışan yerel taslak korundu. Üstteki Taslağı geri yükle düğmesiyle açabilirsiniz.") });
   },
 });
 const rich = new DocumentEditor({
@@ -171,13 +185,13 @@ function resolveImages(root: HTMLElement): void {
   if (missing.size) post({ type: "resolve-imgs", paths: Array.from(missing) });
 }
 function saveImage(file: File, target: "live" | "source"): void {
-  if (file.size > 15 * 1024 * 1024) { post({ type: "error", message: "Görsel 15 MB'tan büyük." }); return; }
+  if (file.size > 15 * 1024 * 1024) { post({ type: "error", message: t("Görsel 15 MB'tan büyük.") }); return; }
   const nonce = `image-${Date.now()}-${++imageSequence}`;
   pendingImages.set(nonce, target);
   if (target === "live") rich.bookmark(nonce); else source.bookmark(nonce);
   const reader = new FileReader();
   reader.onload = () => post({ type: "save-image", nonce, dataUrl: reader.result });
-  reader.onerror = () => { pendingImages.delete(nonce); post({ type: "error", message: "Görsel okunamadı." }); };
+  reader.onerror = () => { pendingImages.delete(nonce); post({ type: "error", message: t("Görsel okunamadı.") }); };
   reader.readAsDataURL(file);
 }
 function showRecovery(draft: string): void {
@@ -185,9 +199,9 @@ function showRecovery(draft: string): void {
   vscode.setState({ ...vscode.getState(), recoveryDraft: draft });
   const notice = document.createElement("div"); notice.id = "recovery-draft"; notice.className = "document-notice";
   notice.setAttribute("role", "status");
-  const label = document.createElement("span"); label.textContent = "Kaydedilmemiş bir taslak bulundu.";
-  const restore = document.createElement("button"); restore.type = "button"; restore.textContent = "Taslağı geri yükle";
-  const dismiss = document.createElement("button"); dismiss.type = "button"; dismiss.textContent = "Taslağı sil";
+  const label = document.createElement("span"); label.textContent = t("Kaydedilmemiş bir taslak bulundu.");
+  const restore = document.createElement("button"); restore.type = "button"; restore.textContent = t("Taslağı geri yükle");
+  const dismiss = document.createElement("button"); dismiss.type = "button"; dismiss.textContent = t("Taslağı sil");
   restore.onclick = () => {
     setMode("live"); rich.replaceMarkdown(draft); rich.flush();
     vscode.setState({ ...vscode.getState(), recoveryDraft: undefined }); notice.remove();
@@ -264,6 +278,13 @@ window.addEventListener("message", (event) => {
     const local = vscode.getState()?.draft;
     if (draft && typeof draft.text === "string" && draft.text !== sync.text && (!local || draft.updatedAt >= local.updatedAt)) showRecovery(draft.text);
   } else if (message.type === "config") {
+    toolbar?.close();
+    document.querySelector<HTMLDialogElement>(".source-dialog")?.close();
+    updateLanguage(message.language);
+    if (find?.isOpen()) find.refresh();
+    rich.editor.view.dom.setAttribute("aria-label", t("Belge düzenleyici"));
+    const recovery = vscode.getState()?.recoveryDraft;
+    if (recovery !== undefined) showRecovery(recovery);
     wrap = message.wordWrap !== false; numbers = message.lineNumbers !== false; theme();
     if (!configured) { setMode(vscode.getState()?.mode || (validMode(message.defaultMode) ? message.defaultMode : "live")); configured = true; }
   } else if (message.type === "img-saved") {

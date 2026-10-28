@@ -1,3 +1,4 @@
+import { translate, type Language } from "./shared/i18n";
 import { RequestQueue } from "./host/request-queue";
 import { DraftStore } from "./host/draft-store";
 import { normalizeNewlines } from "./shared/md-utils";
@@ -12,6 +13,7 @@ import { escapeRegExp } from "./shared/md-utils";
 
 // Webview <-> extension mesaj protokolü sürümü (iki taraf da bilmediğini yoksayar)
 const PROTO = 1;
+const t = (message: string) => translate(message, vscode.workspace.getConfiguration("karacaMd").get<Language>("language", "en"));
 
 export function activate(context: vscode.ExtensionContext) {
   const provider = new KaracaMarkdownProvider(context);
@@ -35,7 +37,7 @@ export function activate(context: vscode.ExtensionContext) {
       const editor = vscode.window.activeTextEditor;
       const target = editor?.document?.languageId === "markdown" ? editor.document.uri : undefined;
       if (!target) {
-        vscode.window.showInformationMessage("Önce bir Markdown (.md) dosyası açın.");
+        vscode.window.showInformationMessage(t("Önce bir Markdown (.md) dosyası açın."));
         return;
       }
       await vscode.commands.executeCommand("vscode.openWith", target, "karaca.mdEditor");
@@ -43,7 +45,7 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand("karaca-md.showSource", async () => {
       const uri = getActiveCustomUri();
       if (!uri) {
-        vscode.window.showInformationMessage("Aktif Karaca MD sekmesi bulunamadı.");
+        vscode.window.showInformationMessage(t("Aktif Karaca MD sekmesi bulunamadı."));
         return;
       }
       await vscode.commands.executeCommand("vscode.openWith", uri, "default");
@@ -54,8 +56,8 @@ export function activate(context: vscode.ExtensionContext) {
     }),
     vscode.commands.registerCommand("karaca-md.newNote", async () => {
       const name = await vscode.window.showInputBox({
-        prompt: "Not adı",
-        placeHolder: "Örn: Toplantı notları",
+        prompt: t("Not adı"),
+        placeHolder: t("Örn: Toplantı notları"),
       });
       if (!name?.trim()) {
         return;
@@ -63,7 +65,7 @@ export function activate(context: vscode.ExtensionContext) {
       const clean = name.trim().replace(/[\\/]+/g, "-");
       const dir = activeMdDir() ?? vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
       if (!dir) {
-        vscode.window.showInformationMessage("Önce bir klasör açın veya bir md dosyası açın.");
+        vscode.window.showInformationMessage(t("Önce bir klasör açın veya bir md dosyası açın."));
         return;
       }
       const fileName = clean.endsWith(".md") ? clean : `${clean}.md`;
@@ -76,7 +78,7 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand("karaca-md.dailyNote", async () => {
       const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? activeMdDir();
       if (!root) {
-        vscode.window.showInformationMessage("Önce bir klasör açın.");
+        vscode.window.showInformationMessage(t("Önce bir klasör açın."));
         return;
       }
       const d = new Date();
@@ -87,7 +89,7 @@ export function activate(context: vscode.ExtensionContext) {
       if (!(await uriExists(target))) {
         await vscode.workspace.fs.writeFile(
           target,
-          Buffer.from(`# ${stamp}\n\n## Görevler\n\n- [ ] \n`, "utf8")
+          Buffer.from(`# ${stamp}\n\n## ${t("Görevler")}\n\n- [ ] \n`, "utf8")
         );
       }
       await vscode.commands.executeCommand("vscode.openWith", target, "karaca.mdEditor");
@@ -186,7 +188,7 @@ class OutlineItem extends vscode.TreeItem {
         : vscode.TreeItemCollapsibleState.None
     );
     this.description = `${node.line + 1}`;
-    this.command = { command: "karaca-md.reveal", title: "Git", arguments: [uri, node.line] };
+    this.command = { command: "karaca-md.reveal", title: t("Git"), arguments: [uri, node.line] };
   }
 }
 
@@ -264,7 +266,7 @@ class KaracaBacklinkProvider implements vscode.TreeDataProvider<vscode.TreeItem>
     return this.cache.map((u) => {
       const it = new vscode.TreeItem(path.basename(u.fsPath), vscode.TreeItemCollapsibleState.None);
       it.resourceUri = u;
-      it.command = { command: "vscode.openWith", title: "Aç", arguments: [u, "karaca.mdEditor"] };
+      it.command = { command: "vscode.openWith", title: t("Aç"), arguments: [u, "karaca.mdEditor"] };
       return it;
     });
   }
@@ -278,7 +280,13 @@ class KaracaMarkdownProvider implements vscode.CustomTextEditorProvider {
 
   private readonly drafts: DraftStore;
   constructor(private readonly context: vscode.ExtensionContext) {
-    this.drafts = new DraftStore(path.join(context.globalStorageUri.fsPath, "drafts"));
+    const directory = path.join(context.globalStorageUri.fsPath, "drafts");
+    // Preserve package-12 backups across the publisher/extension ID change.
+    const legacy = path.join(path.dirname(context.globalStorageUri.fsPath), "vibecode.karaca-md-editor", "drafts");
+    try {
+      if (!fs.existsSync(directory) && fs.existsSync(legacy)) fs.cpSync(legacy, directory, { recursive: true, force: false });
+    } catch { void vscode.window.showWarningMessage(t("Eski taslak yedekleri taşınamadı. Eski yedekler korunuyor.")); }
+    this.drafts = new DraftStore(directory);
   }
 
   private recordVersion(uri: vscode.Uri, version: number, text: string): void {
@@ -348,7 +356,7 @@ class KaracaMarkdownProvider implements vscode.CustomTextEditorProvider {
     const draftError = () => {
       if (draftWarningShown) return;
       draftWarningShown = true;
-      void vscode.window.showWarningMessage("Yerel taslak yedeği yazılamadı. Belgeyi Ctrl+S ile kaydedin.");
+      void vscode.window.showWarningMessage(t("Yerel taslak yedeği yazılamadı. Belgeyi Ctrl+S ile kaydedin."));
     };
     const snapshot = () => ({ text: document.getText(), version: document.version, isDirty: document.isDirty });
     const updateWebview = () => {
@@ -366,6 +374,7 @@ class KaracaMarkdownProvider implements vscode.CustomTextEditorProvider {
       webviewPanel.webview.postMessage({
         proto: PROTO,
         type: "config",
+        language: cfg().get<string>("language", "en"),
         defaultMode: cfg().get<string>("defaultMode", "live"),
         wordWrap: cfg().get<boolean>("wordWrap", true),
         lineNumbers: cfg().get<boolean>("lineNumbers", true),
@@ -410,6 +419,13 @@ class KaracaMarkdownProvider implements vscode.CustomTextEditorProvider {
           if (draft && !document.isDirty && normalizeNewlines(draft.text) === normalizeNewlines(document.getText())) {
             await this.drafts.clear(draftKey, document.getText()).catch(draftError);
           } else webviewPanel.webview.postMessage({ proto: PROTO, type: "draft-state", draft });
+          break;
+        }
+        case "language": {
+          if (msg.language === "en" || msg.language === "tr") {
+            await vscode.workspace.getConfiguration("karacaMd").update("language", msg.language, vscode.ConfigurationTarget.Global);
+            postConfig();
+          }
           break;
         }
         case "draft": {
@@ -465,7 +481,7 @@ class KaracaMarkdownProvider implements vscode.CustomTextEditorProvider {
           break;
         }
         case "error": {
-          vscode.window.showErrorMessage(`Markdown editör: ${msg.message}`);
+          vscode.window.showErrorMessage(`${t("Markdown editör:")} ${msg.message}`);
           break;
         }
       }
@@ -499,11 +515,11 @@ class KaracaMarkdownProvider implements vscode.CustomTextEditorProvider {
       } catch {
         // Dosya yoksa oluşturmayı teklif et
         const create = await vscode.window.showInformationMessage(
-          `"${cleaned}" bulunamadı. Oluşturulsun mu?`,
-          "Oluştur",
-          "Vazgeç"
+          `"${cleaned}" ${t("Dosya bulunamadı.")} ${t("Oluşturulsun mu?")}`,
+          t("Oluştur"),
+          t("Vazgeç")
         );
-        if (create === "Oluştur") {
+        if (create === t("Oluştur")) {
           await vscode.workspace.fs.createDirectory(
             vscode.Uri.file(path.dirname(target.fsPath))
           );
@@ -512,7 +528,7 @@ class KaracaMarkdownProvider implements vscode.CustomTextEditorProvider {
         }
       }
     } catch (err: any) {
-      vscode.window.showErrorMessage(`Bağlantı açılamadı: ${err?.message ?? err}`);
+      vscode.window.showErrorMessage(`${t("Bağlantı açılamadı:")} ${err?.message ?? err}`);
     }
   }
 
@@ -538,11 +554,11 @@ class KaracaMarkdownProvider implements vscode.CustomTextEditorProvider {
     }
     if (!target) {
       const create = await vscode.window.showInformationMessage(
-        `"${fileName}" bulunamadı. Oluşturulsun mu?`,
-        "Oluştur",
-        "Vazgeç"
+        `"${fileName}" ${t("Dosya bulunamadı.")} ${t("Oluşturulsun mu?")}`,
+        t("Oluştur"),
+        t("Vazgeç")
       );
-      if (create !== "Oluştur") {
+      if (create !== t("Oluştur")) {
         return;
       }
       await vscode.workspace.fs.writeFile(sameDir, Buffer.from(`# ${p.target}\n`, "utf8"));
@@ -574,12 +590,12 @@ class KaracaMarkdownProvider implements vscode.CustomTextEditorProvider {
     const mime = m[1].toLowerCase();
     const ext = mimeToExt(mime);
     if (!ext) {
-      vscode.window.showWarningMessage(`Desteklenmeyen görsel türü: ${mime}`);
+      vscode.window.showWarningMessage(`${t("Desteklenmeyen görsel türü:")} ${mime}`);
       return null;
     }
     const buf = Buffer.from(m[2], "base64");
     if (buf.length > 15 * 1024 * 1024) {
-      vscode.window.showWarningMessage("Görsel 15 MB'tan büyük, yapıştırılamadı.");
+      vscode.window.showWarningMessage(t("Görsel 15 MB'tan büyük, yapıştırılamadı."));
       return null;
     }
     const docDir = path.dirname(document.uri.fsPath);
@@ -606,11 +622,11 @@ class KaracaMarkdownProvider implements vscode.CustomTextEditorProvider {
       }
       const full = document.getText();
       const cursor = Math.max(0, Math.min(Number(msg.cursor) || 0, full.length));
-      const snippet = `![görsel](${rel})`;
+      const snippet = `![${t("görsel")}](${rel})`;
       const next = full.slice(0, cursor) + snippet + full.slice(cursor);
       await this.applyText(document, next);
     } catch (err: any) {
-      vscode.window.showErrorMessage(`Görsel yapıştırılamadı: ${err?.message ?? err}`);
+      vscode.window.showErrorMessage(`${t("Görsel yapıştırılamadı:")} ${err?.message ?? err}`);
     }
   }
 
@@ -635,7 +651,7 @@ class KaracaMarkdownProvider implements vscode.CustomTextEditorProvider {
         nonce: msg.nonce ?? "",
         path: "",
       });
-      vscode.window.showErrorMessage(`Görsel yapıştırılamadı: ${err?.message ?? err}`);
+      vscode.window.showErrorMessage(`${t("Görsel yapıştırılamadı:")} ${err?.message ?? err}`);
     }
   }
 
@@ -715,7 +731,7 @@ class KaracaMarkdownProvider implements vscode.CustomTextEditorProvider {
       // katex.css yoksa sessiz geç (matematik yine de metin olarak görünür)
     }
     return `<!DOCTYPE html>
-<html lang="tr">
+<html lang="en">
 <head>
 <meta charset="UTF-8" />
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} https: data: blob:; media-src ${webview.cspSource} https: data: blob:; style-src ${webview.cspSource} 'unsafe-inline' https:; font-src ${webview.cspSource} https: data:; script-src 'nonce-${nonce}' ${webview.cspSource};" />

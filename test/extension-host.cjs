@@ -34,7 +34,11 @@ test("VS Code Extension Host: aç, düzenle, kaydet ve yeniden aç", { timeout: 
     assert.ok(fs.existsSync(path.join(channel, "ready")), "Extension Host test runner başlatılmalı");
     let frame = await editorFrame();
     await frame.locator("#live-root h1").waitFor();
-    assert.equal(await frame.locator("#pkgmark").innerText(), "paket-12");
+    assert.equal(await frame.locator("#pkgmark").innerText(), "paket-13");
+    await frame.getByRole("button", { name: "Table", exact: true }).waitFor();
+    assert.equal(await frame.locator("#ui-language").inputValue(), "en");
+    await frame.locator("#ui-language").selectOption("tr");
+    await frame.getByRole("button", { name: "Tablo", exact: true }).waitFor();
     await frame.locator("#live-root .tiptap").click();
     await window.keyboard.press("Control+End");
     await window.keyboard.press("Enter");
@@ -47,8 +51,10 @@ test("VS Code Extension Host: aç, düzenle, kaydet ve yeniden aç", { timeout: 
     assert.ok(fs.existsSync(path.join(channel, "reopened")), "Belge host API ile yeniden açılmalı");
     frame = await editorFrame();
     await frame.waitForFunction(() => document.querySelector("#live-root")?.textContent.includes("Extension Host kaydı başarılı"));
+    await frame.getByRole("button", { name: "Tablo", exact: true }).waitFor();
+    assert.equal(await frame.locator("#ui-language").inputValue(), "tr");
     assert.match(await frame.locator("#live-root").innerText(), /Extension Host kaydı başarılı/);
-    await window.screenshot({ path: path.join(directory, "roundtrip-paket-12.png") });
+    await window.screenshot({ path: path.join(directory, "roundtrip-paket-13.png") });
 
   } catch (error) {
     const window = await app.firstWindow();

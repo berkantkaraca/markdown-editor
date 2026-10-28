@@ -290,7 +290,7 @@ export function renderFrontmatterHtml(fm: Frontmatter): string {
     )
     .join("");
   const body =
-    rows || '<div class="fm-row"><span class="fm-val">boş ön madde</span></div>';
+    rows || '<div class="fm-row"><span class="fm-val"></span></div>';
   return `<div class="frontmatter" contenteditable="false" data-raw="${escapeHtml(fm.raw)}">${body}</div>`;
 }
 

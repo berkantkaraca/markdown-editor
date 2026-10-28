@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 import { renderPreview } from "./preview";
 
 export type SpecialKind = "math" | "mermaid" | "html";
@@ -11,16 +12,16 @@ export function openSourceDialog(options: { kind: SpecialKind; source: string; s
   const form = document.createElement("form");
   const title = document.createElement("h2");
   title.id = "source-dialog-title";
-  title.textContent = options.kind === "math" ? "Matematik düzenle" : options.kind === "mermaid" ? "Diyagram düzenle" : "HTML kaynağını düzenle";
-  const label = document.createElement("label"); label.textContent = "Kaynak";
+  title.textContent = options.kind === "math" ? t("Matematik düzenle") : options.kind === "mermaid" ? t("Diyagram düzenle") : t("HTML kaynağını düzenle");
+  const label = document.createElement("label"); label.textContent = t("Kaynak");
   const input = document.createElement("textarea");
-  input.value = options.source; input.spellcheck = false; input.rows = 9; input.setAttribute("aria-label", "Kaynak");
+  input.value = options.source; input.spellcheck = false; input.rows = 9; input.setAttribute("aria-label", t("Kaynak"));
   label.appendChild(input);
-  const previewLabel = document.createElement("span"); previewLabel.className = "source-preview-label"; previewLabel.textContent = "Önizleme";
-  const preview = document.createElement("div"); preview.className = "source-preview md-body"; preview.setAttribute("aria-label", "Önizleme");
+  const previewLabel = document.createElement("span"); previewLabel.className = "source-preview-label"; previewLabel.textContent = t("Önizleme");
+  const preview = document.createElement("div"); preview.className = "source-preview md-body"; preview.setAttribute("aria-label", t("Önizleme"));
   const row = document.createElement("div"); row.className = "kdialog-row";
-  const cancel = document.createElement("button"); cancel.type = "button"; cancel.textContent = "Vazgeç"; cancel.onclick = () => dialog.close();
-  const save = document.createElement("button"); save.type = "submit"; save.className = "primary"; save.textContent = "Uygula";
+  const cancel = document.createElement("button"); cancel.type = "button"; cancel.textContent = t("Vazgeç"); cancel.onclick = () => dialog.close();
+  const save = document.createElement("button"); save.type = "submit"; save.className = "primary"; save.textContent = t("Uygula");
   row.append(cancel, save); form.append(title, label, previewLabel, preview, row); dialog.appendChild(form);
   let timer: ReturnType<typeof setTimeout>;
   const refresh = () => { if (dialog.open) renderPreview(preview, input.value); };

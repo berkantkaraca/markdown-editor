@@ -1,5 +1,6 @@
 import { prepareTaskLists, taskCheckbox } from "./task-lists";
 import { decodeSource } from "../shared/md-utils";
+import { t } from "./i18n";
 import DOMPurify from "dompurify";
 import { createMdPipeline } from "../shared/md-pipeline";
 const { renderFullWithFm } = createMdPipeline();
@@ -91,7 +92,7 @@ export async function runMermaid(root: HTMLElement) {
     // sessiz geçilir, sonraki render tekrar dener. Sentaks hataları gösterilir.
     const environmental =
       /getBBox|getComputedTextLength|NS_ERROR|not rendered|offsetParent/i.test(raw);
-    const message = `Mermaid çizilemedi: ${raw}`;
+    const message = `${t("Mermaid çizilemedi:")} ${raw}`;
     fresh.forEach((el) => {
       if (!environmental) {
         el.dataset.done = "1";

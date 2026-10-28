@@ -1,5 +1,20 @@
 # Karaca MD Editor
 
+A continuous WYSIWYG Markdown editor for VS Code, by **berkantkaraca**.
+Edit formatted text in Live mode, use Source or Split for Markdown, and switch to
+Reading for a clean preview. Currently supported on Windows.
+
+The editor opens in **English** by default. Choose **Türkçe** from the language
+selector in the toolbar, or set `"karacaMd.language": "tr"` in VS Code settings.
+The choice is saved globally and takes effect without reloading the document.
+VS Code command and settings descriptions use VS Code's display language through
+the bundled English and Turkish localization files.
+
+Extension ID: `berkantkaraca.karaca-md-editor`. Previous local draft backups are
+copied from the old publisher's storage on first activation; the originals remain.
+
+## Türkçe
+
 VS Code içinde Word benzeri tek yüzeyli WYSIWYG Markdown editörü.
 Paragraflar ve başlıklar aynı belge üzerinde düzenlenir; tıklayınca ayrı blok
 editörü veya ham Markdown kutusu açılmaz. Canlı düzenleme Tiptap/ProseMirror'a dayanır.
@@ -40,12 +55,12 @@ npm run test:browser
 ```
 
 VS Code'da F5 ile Extension Development Host açın; `sample.md` dosyasını açarak
-deneyin. Araç çubuğunda **paket-12** görünmelidir. Kurulu eski eklentiyi kullanıyorsanız
+deneyin. Araç çubuğunda **paket-13** görünmelidir. Kurulu eski eklentiyi kullanıyorsanız
 Extension Development Host içindeki sürümü açtığınızdan emin olun.
 
 Tarayıcı testleri Windows'ta Chrome/Edge'i bulur. Başka bir kurulum için
 `CHROME_PATH` kullanın veya `npx playwright install chromium` çalıştırın.
-Test ekran görüntüsü `out/editor-paket-12.png` dosyasına yazılır.
+Test ekran görüntüsü `out/editor-paket-13.png` dosyasına yazılır.
 
 Ayarlar: `karacaMd.defaultMode` (`live`, `source`, `split`, `reading`),
 `karacaMd.wordWrap`, `karacaMd.lineNumbers`.

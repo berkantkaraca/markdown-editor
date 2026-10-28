@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 import { EditorState, Compartment, Transaction } from "@codemirror/state";
 import { EditorView, keymap, lineNumbers, highlightActiveLine } from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap, undo, redo, undoDepth, redoDepth } from "@codemirror/commands";
@@ -12,13 +13,14 @@ export class SourceEditor {
   private wrapping = new Compartment();
   private numbers = new Compartment();
   private theme = new Compartment();
+  private locale = new Compartment();
   private bookmarks = new Map<string, number>();
 
   constructor(element: HTMLElement, changed: (text: string) => void, pasteImage: (file: File) => void) {
     this.view = new EditorView({ parent: element, state: EditorState.create({
       extensions: [
         history(), markdown(), highlightActiveLine(), search({ top: true }), highlightSelectionMatches(),
-        this.wrapping.of(EditorView.lineWrapping), this.numbers.of(lineNumbers()), this.theme.of([]),
+        this.wrapping.of(EditorView.lineWrapping), this.numbers.of(lineNumbers()), this.theme.of([]), this.locale.of([]),
         keymap.of([{ key: "Enter", run: (view) => {
           const selection = view.state.selection.main;
           if (!selection.empty) return false;
@@ -66,7 +68,13 @@ export class SourceEditor {
 
   configure(wrap: boolean, numbers: boolean, dark: boolean): void {
     this.view.dispatch({ effects: [this.wrapping.reconfigure(wrap ? EditorView.lineWrapping : []),
-      this.numbers.reconfigure(numbers ? lineNumbers() : []), this.theme.reconfigure(dark ? oneDark : [])] });
+      this.numbers.reconfigure(numbers ? lineNumbers() : []), this.theme.reconfigure(dark ? oneDark : []),
+      this.locale.reconfigure(EditorState.phrases.of(t("Kaynak") === "Kaynak" ? {
+        "Find": "Bul", "Replace": "Değiştir", "next": "sonraki", "previous": "önceki", "all": "tümü",
+        "match case": "büyük/küçük harf", "regexp": "normal ifade", "by word": "tüm sözcük",
+        "replace": "değiştir", "replace all": "tümünü değiştir", "close": "kapat", "Go to line": "Satıra git",
+        "go": "git", "No matches": "Eşleşme yok",
+      } : {}))] });
   }
   undo(): void { undo(this.view); }
   redo(): void { redo(this.view); }
@@ -77,6 +85,6 @@ export class SourceEditor {
     const pos = this.bookmarks.get(key);
     this.bookmarks.delete(key);
     if (pos === undefined) return;
-    this.view.dispatch({ changes: { from: pos, insert: `![görsel](${src})` } });
+    this.view.dispatch({ changes: { from: pos, insert: `![${t("görsel")}](${src})` } });
   }
 }

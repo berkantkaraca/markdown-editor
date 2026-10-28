@@ -1,0 +1,13 @@
+{
+  "description": "berkantkaraca tarafından geliştirilen tek yüzeyli WYSIWYG Markdown editörü. Canlı, Kaynak, Split ve Okuma modları.",
+  "view.karacaOutline": "Karaca İçindekiler",
+  "view.karacaBacklinks": "Karaca Geri Bağlantılar",
+  "karaca-md.openLive": "Karaca MD: Canlı Editörde Aç",
+  "karaca-md.showSource": "Karaca MD: Varsayılan Metin Editörüyle Aç",
+  "karaca-md.newNote": "Karaca MD: Hızlı Not Oluştur",
+  "karaca-md.dailyNote": "Karaca MD: Günlük Notu Aç",
+  "config.defaultMode": "Markdown dosyası açıldığında varsayılan mod.",
+  "config.wordWrap": "Kaynak editörde satır kaydırma.",
+  "config.lineNumbers": "Kaynak editörde satır numaraları.",
+  "config.language": "Editör arayüz dili. Varsayılan İngilizce, isteğe bağlı Türkçe."
+}

@@ -6,7 +6,7 @@ exports.run = async () => {
   const directory = process.env.KARACA_HOST_TEST_CHANNEL;
   const file = process.env.KARACA_HOST_TEST_FILE;
   if (!directory || !file) throw new Error("Missing test channel");
-  const extension = vscode.extensions.getExtension("vibecode.karaca-md-editor");
+  const extension = vscode.extensions.getExtension("berkantkaraca.karaca-md-editor");
   if (!extension) throw new Error("Karaca extension is not registered");
   await extension.activate();
   const open = () => vscode.commands.executeCommand("vscode.openWith", vscode.Uri.file(file), "karaca.mdEditor");

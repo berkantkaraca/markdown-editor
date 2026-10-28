@@ -1,25 +1,26 @@
+import { t } from "./i18n";
 // A compact size picker shared by Live and Source toolbar commands.
 export function createTablePicker(anchor: HTMLElement, insert: (rows: number, cols: number) => void, cancel: () => void): HTMLElement {
   const form = document.createElement("form"); form.className = "table-picker";
-  form.setAttribute("role", "dialog"); form.setAttribute("aria-label", "Tablo ekle");
-  form.innerHTML = `<strong>Tablo ekle</strong><span class="table-size" aria-live="polite"></span>
-    <div class="table-grid" role="group" aria-label="Hızlı boyut seçimi"></div>
-    <div class="table-dimensions">${dimension("cols", "Sütun", 2, 20)}${dimension("rows", "Satır", 3, 50)}</div>
-    <small>İlk satır başlıktır. En fazla 20 sütun, 50 satır.</small>
-    <div class="kdialog-row"><button type="button" data-cancel>Vazgeç</button><button type="submit" class="primary">Tabloyu ekle</button></div>`;
+  form.setAttribute("role", "dialog"); form.setAttribute("aria-label", t("Tablo ekle"));
+  form.innerHTML = `<strong>${t("Tablo ekle")}</strong><span class="table-size" aria-live="polite"></span>
+    <div class="table-grid" role="group" aria-label="${t("Hızlı boyut seçimi")}"></div>
+    <div class="table-dimensions">${dimension("cols", t("Sütun"), 2, 20)}${dimension("rows", t("Satır"), 3, 50)}</div>
+    <small>${t("İlk satır başlıktır. En fazla 20 sütun, 50 satır.")}</small>
+    <div class="kdialog-row"><button type="button" data-cancel>${t("Vazgeç")}</button><button type="submit" class="primary">${t("Tabloyu ekle")}</button></div>`;
   const rows = form.querySelector<HTMLInputElement>('[name="rows"]')!;
   const cols = form.querySelector<HTMLInputElement>('[name="cols"]')!;
   const grid = form.querySelector<HTMLElement>(".table-grid")!;
   const cells: HTMLButtonElement[] = [];
   function dimension(name: string, label: string, value: number, max: number): string {
     return `<div class="table-field"><label for="table-${name}">${label}</label><div class="table-stepper">
-      <button type="button" data-field="${name}" data-step="-1" aria-label="${label} azalt">−</button>
+      <button type="button" data-field="${name}" data-step="-1" aria-label="${label} ${t("azalt")}">−</button>
       <input id="table-${name}" name="${name}" type="number" min="1" max="${max}" step="1" value="${value}" required>
-      <button type="button" data-field="${name}" data-step="1" aria-label="${label} artır">+</button>
+      <button type="button" data-field="${name}" data-step="1" aria-label="${label} ${t("artır")}">+</button>
     </div></div>`;
   }
   function preview(r: number, c: number) {
-    form.querySelector(".table-size")!.textContent = `${c} sütun × ${r} satır`;
+    form.querySelector(".table-size")!.textContent = `${c} ${t("sütun")} × ${r} ${t("satır")}`;
     cells.forEach((cell, i) => cell.classList.toggle("selected", Math.floor(i / 8) < r && i % 8 < c));
     form.querySelectorAll<HTMLButtonElement>("[data-step]").forEach(button => {
       const input = button.dataset.field === "rows" ? rows : cols;
@@ -34,7 +35,7 @@ export function createTablePicker(anchor: HTMLElement, insert: (rows: number, co
   }));
   for (let r = 1; r <= 6; r++) for (let c = 1; c <= 8; c++) {
     const cell = document.createElement("button"); cell.type = "button"; cell.tabIndex = r === 3 && c === 2 ? 0 : -1;
-    cell.setAttribute("aria-label", `${c} sütun, ${r} satır`);
+    cell.setAttribute("aria-label", `${c} ${t("sütun")}, ${r} ${t("satır")}`);
     // The selected size includes the Markdown header row.
     cell.addEventListener("mouseenter", () => preview(r, c));
     cell.addEventListener("focus", () => { rows.value = String(r); cols.value = String(c); preview(r, c); });

@@ -1,13 +1,13 @@
 {
   "name": "karaca-md-editor",
   "displayName": "Karaca MD",
-  "description": "Word benzeri tek yüzeyli WYSIWYG Markdown editörü. Kaynak, canlı, split ve okuma modları.",
-  "version": "0.1.12",
-  "publisher": "vibecode",
+  "description": "%description%",
+  "version": "0.1.13",
+  "publisher": "berkantkaraca",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/vibecode/markdown-editor"
+    "url": "https://github.com/berkantkaraca/markdown-editor"
   },
   "engines": {
     "vscode": "^1.85.0"
@@ -39,33 +39,33 @@
       "explorer": [
         {
           "id": "karacaOutline",
-          "name": "Karaca İçindekiler"
+          "name": "%view.karacaOutline%"
         },
         {
           "id": "karacaBacklinks",
-          "name": "Karaca Geri Bağlantılar"
+          "name": "%view.karacaBacklinks%"
         }
       ]
     },
     "commands": [
       {
         "command": "karaca-md.openLive",
-        "title": "Karaca MD: Canlı Editörde Aç",
+        "title": "%karaca-md.openLive%",
         "category": "Karaca"
       },
       {
         "command": "karaca-md.showSource",
-        "title": "Karaca MD: Varsayılan Metin Editörüyle Aç",
+        "title": "%karaca-md.showSource%",
         "category": "Karaca"
       },
       {
         "command": "karaca-md.newNote",
-        "title": "Karaca MD: Hızlı Not Oluştur",
+        "title": "%karaca-md.newNote%",
         "category": "Karaca"
       },
       {
         "command": "karaca-md.dailyNote",
-        "title": "Karaca MD: Günlük Notu Aç",
+        "title": "%karaca-md.dailyNote%",
         "category": "Karaca"
       }
     ],
@@ -99,17 +99,31 @@
             "reading"
           ],
           "default": "live",
-          "description": "Markdown dosyası açıldığında varsayılan mod."
+          "description": "%config.defaultMode%"
         },
         "karacaMd.wordWrap": {
           "type": "boolean",
           "default": true,
-          "description": "Kaynak editörde satır kaydırma."
+          "description": "%config.wordWrap%"
         },
         "karacaMd.lineNumbers": {
           "type": "boolean",
           "default": true,
-          "description": "Kaynak editörde satır numaraları."
+          "description": "%config.lineNumbers%"
+        },
+        "karacaMd.language": {
+          "type": "string",
+          "enum": [
+            "en",
+            "tr"
+          ],
+          "enumDescriptions": [
+            "English",
+            "Türkçe"
+          ],
+          "default": "en",
+          "scope": "application",
+          "description": "%config.language%"
         }
       }
     }
@@ -161,5 +175,9 @@
     "mermaid": "^12.2.0",
     "turndown": "^7.2.4",
     "turndown-plugin-gfm": "^1.0.2"
-  }
+  },
+  "author": {
+    "name": "berkantkaraca"
+  },
+  "icon": "media/icon.png"
 }

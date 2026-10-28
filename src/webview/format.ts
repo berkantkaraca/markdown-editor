@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 import type { Editor } from "@tiptap/core";
 import type { EditorView } from "@codemirror/view";
 import { editTable, setHeadingLevel, togglePrefix, toggleTaskLine } from "../shared/md-utils";
@@ -98,19 +99,19 @@ export function attachFormatbar(deps: FormatDeps) {
     const selected = targetLive ? editor().state.doc.textBetween(editor().state.selection.from, editor().state.selection.to)
       : source().state.sliceDoc(source().state.selection.main.from, source().state.selection.main.to);
     popup = document.createElement("form"); popup.className = "kdialog";
-    popup.setAttribute("role", "dialog"); popup.setAttribute("aria-label", kind === "link" ? "Bağlantı ekle" : "Görsel ekle");
-    const title = document.createElement("strong"); title.textContent = kind === "link" ? "Bağlantı ekle" : "Görsel ekle"; popup.appendChild(title);
+    popup.setAttribute("role", "dialog"); popup.setAttribute("aria-label", kind === "link" ? t("Bağlantı ekle") : t("Görsel ekle"));
+    const title = document.createElement("strong"); title.textContent = kind === "link" ? t("Bağlantı ekle") : t("Görsel ekle"); popup.appendChild(title);
     const fields = [selected, kind === "link" ? "https://" : ""] .map((value, i) => {
-      const label = document.createElement("label"); label.textContent = i ? "Adres / dosya yolu" : "Metin / açıklama";
+      const label = document.createElement("label"); label.textContent = i ? t("Adres / dosya yolu") : t("Metin / açıklama");
       const input = document.createElement("input"); input.value = value; label.appendChild(input); popup!.appendChild(label); return input;
     });
     const row = document.createElement("div"); row.className = "kdialog-row";
-    const cancel = document.createElement("button"); cancel.type = "button"; cancel.textContent = "Vazgeç"; cancel.onclick = close;
-    const ok = document.createElement("button"); ok.type = "submit"; ok.textContent = "Ekle"; ok.className = "primary";
+    const cancel = document.createElement("button"); cancel.type = "button"; cancel.textContent = t("Vazgeç"); cancel.onclick = close;
+    const ok = document.createElement("button"); ok.type = "submit"; ok.textContent = t("Ekle"); ok.className = "primary";
     row.append(cancel, ok); popup.appendChild(row);
     popup.addEventListener("submit", (event) => {
       event.preventDefault();
-      const text = fields[0].value || (kind === "link" ? "bağlantı" : "görsel"), url = fields[1].value.trim();
+      const text = fields[0].value || (kind === "link" ? t("bağlantı") : t("görsel")), url = fields[1].value.trim();
       if (!url || /^(javascript|vbscript|data):/i.test(url)) { fields[1].focus(); return; }
       close();
       if (targetLive) {
@@ -139,7 +140,7 @@ export function attachFormatbar(deps: FormatDeps) {
         editor().chain().focus().insertTable({ rows, cols, withHeaderRow: true }).run();
       } else if (range) {
         const view = source();
-        const header = `| ${Array.from({ length: cols }, (_, i) => `Başlık ${i + 1}`).join(" | ")} |`;
+        const header = `| ${Array.from({ length: cols }, (_, i) => `${t("Başlık")} ${i + 1}`).join(" | ")} |`;
         const divider = `| ${Array(cols).fill("---").join(" | ")} |`;
         const body = Array(rows - 1).fill(`| ${Array(cols).fill("").join(" | ")} |`);
         const snippet = "\n\n" + [header, divider, ...body].join("\n") + "\n\n";
@@ -155,18 +156,18 @@ export function attachFormatbar(deps: FormatDeps) {
     if (command === "undo") return deps.undo();
     if (command === "redo") return deps.redo();
     if (command === "heading-menu") {
-      menu(anchor, [...[1, 2, 3, 4, 5, 6].map((level) => ({ label: `Başlık ${level}`, run: () => {
+      menu(anchor, [...[1, 2, 3, 4, 5, 6].map((level) => ({ label: `${t("Başlık")} ${level}`, run: () => {
         if (live()) editor().chain().focus().setHeading({ level: level as 1 | 2 | 3 | 4 | 5 | 6 }).run();
         else lines(setHeadingLevel(level));
-      } })), { label: "Normal metin", run: () => {
+      } })), { label: t("Normal metin"), run: () => {
         if (live()) editor().chain().focus().setParagraph().run(); else lines((line) => line.replace(/^#{1,6}\s+/, ""));
       } }]); return;
     }
     if (command === "table-menu") {
       const inTable = live() ? editor().isActive("table") : source().state.doc.lineAt(source().state.selection.main.head).text.trim().startsWith("|");
       if (!inTable) { pickTable(anchor); return; }
-      menu(anchor, [{ label: "Yeni tablo…", run: () => { setTimeout(() => pickTable(anchor), 0); } }, ...(["add-row", "del-row", "add-col", "del-col"] as TableOp[]).map((operation, i) => ({
-        label: ["+ Satır", "− Satır", "+ Sütun", "− Sütun"][i], run: () => table(operation),
+      menu(anchor, [{ label: t("Yeni tablo…"), run: () => { setTimeout(() => pickTable(anchor), 0); } }, ...(["add-row", "del-row", "add-col", "del-col"] as TableOp[]).map((operation, i) => ({
+        label: [t("+ Satır"), t("− Satır"), t("+ Sütun"), t("− Sütun")][i], run: () => table(operation),
       }))]); return;
     }
     if (command === "link" || command === "image") return dialog(command);
@@ -186,10 +187,10 @@ export function attachFormatbar(deps: FormatDeps) {
       if (command === "task") chain.toggleTaskList().run();
       if (command === "quote") chain.toggleBlockquote().run();
     } else {
-      if (command === "bold") insert("metin", "**", "**");
-      if (command === "italic") insert("metin", "*", "*");
-      if (command === "strike") insert("metin", "~~", "~~");
-      if (command === "code") insert("kod", "`", "`");
+      if (command === "bold") insert(t("metin"), "**", "**");
+      if (command === "italic") insert(t("metin"), "*", "*");
+      if (command === "strike") insert(t("metin"), "~~", "~~");
+      if (command === "code") insert(t("kod"), "`", "`");
       if (command === "bullet") lines(togglePrefix("- "));
       if (command === "numbered") lines(togglePrefix("1. "));
       if (command === "task") lines(toggleTaskLine);

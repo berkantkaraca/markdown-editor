@@ -44,7 +44,7 @@ beforeEach(async () => {
   win = dom.window; doc = win.document;
   win.eval(fs.readFileSync(path.join(__dirname, "../../media/test-bundle.js"), "utf8"));
   app = win.__karacaTest;
-  send({ type: "config", defaultMode: "live", wordWrap: true, lineNumbers: true });
+  send({ type: "config", language: "tr", defaultMode: "live", wordWrap: true, lineNumbers: true });
   receive(SAMPLE);
   await pause(20);
   posted.length = 0;
@@ -52,6 +52,19 @@ beforeEach(async () => {
 afterEach(() => { app.rich.destroy(); app.source.view.destroy(); win.close(); });
 
 describe("belge motoru: tek yüzey", () => {
+  it("varsayılan dil İngilizce; Türkçe seçimi belgeyi değiştirmez", () => {
+    send({ type: "config" });
+    assert.equal(doc.documentElement.lang, "en");
+    assert.equal(doc.querySelector("#btn-live").textContent, "Live");
+    assert.equal(button("table-menu").getAttribute("aria-label"), "Table");
+    button("table-menu").click();
+    assert.equal(doc.querySelector(".table-picker").getAttribute("aria-label"), "Insert table");
+    assert.equal(doc.querySelector('.table-picker [name="cols"]').labels[0].textContent, "Columns");
+    send({ type: "config", language: "tr" });
+    assert.equal(doc.querySelector(".table-picker"), null);
+    assert.equal(button("table-menu").getAttribute("aria-label"), "Tablo");
+    assert.equal(app.sync.text, SAMPLE); assert.equal(edits().length, 0);
+  });
   it("tek paragraf düzenlenince diğer Markdown yazımları ve referanslar aynen kalır", () => {
     const original = "Başlık\n======\n\n*   bir\n*   iki\n\nDeğiştir.\n\n[bağ][ref]\n\n[ref]: https://example.com \"başlık\"\n";
     load(original); select("Değiştir"); type("Yeni"); app.rich.flush();
@@ -62,7 +75,7 @@ describe("belge motoru: tek yüzey", () => {
     assert.equal(root().querySelectorAll('[contenteditable="true"]').length, 1);
     assert.equal(root().querySelectorAll(".block, textarea, .tablebar").length, 0);
     assert.equal(root().querySelector("h1").textContent, "Başlık");
-    assert.equal(doc.querySelector("#pkgmark").textContent, "paket-12");
+    assert.equal(doc.querySelector("#pkgmark").textContent, "paket-13");
   });
   it("odak kaybı kaynağı normalize etmez", async () => {
     load("Başlık\n======\n\n*   madde\n\n");

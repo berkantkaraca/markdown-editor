@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 import { SourcePreserver } from "./source-preserver";
 import { openSourceDialog, type SpecialKind } from "./source-dialog";
 import { CodeHighlight } from "./code-highlight";
@@ -56,7 +57,7 @@ function preserved(inline: boolean) {
       const dom = document.createElement(inline ? "span" : "div");
       dom.className = "preserved-content";
       dom.setAttribute("data-md-source", encodeURIComponent(node.attrs.source));
-      dom.setAttribute("title", "Düzenlemek için çift tıklayın");
+      dom.setAttribute("title", t("Düzenlemek için çift tıklayın"));
       dom.addEventListener("dblclick", (event) => {
         event.preventDefault();
         const source = String(node.attrs.source);
@@ -203,7 +204,7 @@ export class DocumentEditor {
           container.appendChild(DOMSerializer.fromSchema(this.editor.schema).serializeFragment(slice.content));
           return converter.turndown(container);
         },
-        attributes: { role: "textbox", "aria-label": "Belge düzenleyici", "aria-multiline": "true", spellcheck: "true" },
+        attributes: { role: "textbox", "aria-label": t("Belge düzenleyici"), "aria-multiline": "true", spellcheck: "true" },
         handlePaste: (_view, event) => {
           const file = Array.from(event.clipboardData?.files || []).find((f) => f.type.startsWith("image/"));
           if (!file) return false;
@@ -287,7 +288,7 @@ export class DocumentEditor {
 
   insertSpecial(kind: "math" | "mermaid"): void {
     const bookmark = this.editor.state.selection.getBookmark();
-    openSourceDialog({ kind, source: kind === "math" ? "$$x^2 + y^2 = z^2$$" : "```mermaid\nflowchart LR\n    A[Başlangıç] --> B[Bitiş]\n```", save: (source) => {
+    openSourceDialog({ kind, source: kind === "math" ? "$$x^2 + y^2 = z^2$$" : "```mermaid\nflowchart LR\n    A[Start] --> B[End]\n```", save: (source) => {
       this.editor.view.dispatch(this.editor.state.tr.setSelection(bookmark.resolve(this.editor.state.doc)));
       this.editor.chain().focus().insertContent(importMarkdown(source)).run();
     } });
@@ -300,7 +301,7 @@ export class DocumentEditor {
     if (!bookmark) return;
     const selection = bookmark.resolve(this.editor.state.doc);
     this.editor.commands.setTextSelection({ from: selection.from, to: selection.to });
-    this.editor.commands.setImage({ src, alt: "görsel" });
+    this.editor.commands.setImage({ src, alt: t("görsel") });
   }
 
   find(query: RegExp | null, active = 0): number {

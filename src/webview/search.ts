@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 // Bulma çubuğu (Canlı/Okuma/Split önizleme): bul + vurgula + değiştir.
 // DOM + seçim mantığı buradadır; doküman durumu deps üzerinden akar.
 import { buildFindRegex as makeFindRegex } from "../shared/md-utils";
@@ -106,7 +107,7 @@ export function attachFindbar(deps: SearchDeps): FindApi {
     }
     const re = buildFindRegex();
     if (!re) {
-      findCount.textContent = "hatalı ifade";
+      findCount.textContent = t("hatalı ifade");
       return;
     }
     if (deps.getMode() === "live") {
@@ -226,7 +227,7 @@ export function attachFindbar(deps: SearchDeps): FindApi {
       return;
     }
     findCount.textContent =
-      (liveCount || findMarks.length) === 0 ? "bulunamadı" : `${findIdx + 1} / ${liveCount || findMarks.length}`;
+      (liveCount || findMarks.length) === 0 ? t("bulunamadı") : `${findIdx + 1} / ${liveCount || findMarks.length}`;
   }
 
   function showFindMark(i: number) {
