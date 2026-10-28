@@ -21,3 +21,6 @@ REFERANS-ANALIZ.md
 .codex/**
 .agents/**
 package-lock.json
+
+.github/**
+PERFORMANCE.md

@@ -1,4 +1,4 @@
-# Karaca MD — paket-8 mimarisi
+# Karaca MD — paket-9 mimarisi
 
 ## Belge modeli
 
@@ -34,14 +34,15 @@ Açılışta Markdown tam belge olarak render edilir. HTML inert DOMParser belge
 çözümlenir; matematik, Mermaid, ön madde ve desteklenen özel HTML yapılarının
 kaynakları saklanır. Temizlenmiş HTML ProseMirror şemasına aktarılır.
 
-Kullanıcı işlemleri modelde yapılır. Modelin HTML serileştirmesi Markdown'a çevrilir;
+Kullanıcı işlemleri modelde yapılır. Değişmeyen düğümlerin Markdown karşılığı önbellekte tutulur;
+yazım durakladığında yalnızca değişen düğümler HTML üzerinden serileştirilir;
 ekrandaki çizilmiş SVG, arama vurguları veya göreli görselin webview adresi kaynağa
 yazılmaz. Düzenleme sırasında bütün belge yeniden render edilmez. Yalnızca mod
 geçişi veya dış revizyon farklı içerik getirirse model yeniden yüklenir.
 
 Düzenlenmeyen dosya, odak değişimi veya mod geçişi nedeniyle normalize edilmez.
-Canlı düzenlemede Markdown'ın eşdeğer yazım biçimi normalize olabilir. Matematik,
-Mermaid ve YAML kaynağı Kaynak modundan düzenlenir; canlı görünümde kaynakları
+Canlı düzenlemede Markdown'ın eşdeğer yazım biçimi normalize olabilir. Matematik ve Mermaid Canlı modda çift tıklamayla kaynak penceresinden düzenlenir;
+YAML kaynağı Kaynak modundan düzenlenir; canlı görünümde kaynakları
 korunan nesnelerdir. Tüm olası ham HTML/Markdown uzantıları için kayıpsız dönüşüm
 garantisi yoktur; standart dışı belgeler Kaynak modundan düzenlenmelidir.
 
@@ -88,3 +89,17 @@ belirtilebilir; Windows'ta Chrome veya Edge otomatik bulunur. Diğer ortamlarda
 
 Testler üretimdeki `layout.html` dosyasını kullanır. Test kancası yalnızca test
 paketinde etkinleşir. Her teslimde paket göstergesi bir artırılır; kurallar AGENTS.md'dedir.
+
+## paket-9 ekleri
+
+`source-dialog.ts` kaynak düzenleme/önizleme penceresini yönetir. Araç çubuğu svg
+simgeler ve semantik gruplar kullanır; komut hedefleri önceki belge seçimini korur.
+Kayıt ve görünüm değişiminden önce `DocumentEditor.flush()` çağrılır. Markdown
+serileştirmesi ile kod renkleri değişmeyen model düğümlerini WeakMap içinde önbellekler.
+Kaynak görünümü Canlı'daki her yazımda güncellenmez; moda geçerken eşitlenir.
+HTML aktarımı kapsayıcı, stil, yorum ve gelişmiş tablolar için kaynak koruması yapar;
+bu nesneler canlıda çift tıklanarak düzenlenebilir. Betikler render'da temizlenir.
+
+Yerel testler Windows, Chromium/Firefox/WebKit, Unicode ve Chromium IME bileşimini kapsar.
+Gerçek VS Code testi ayrı profilde aç/düzenle/kaydet/yeniden aç zincirini çalıştırır.
+Linux/macOS matrisi hazırlanmıştır; o ortamların manuel doğrulaması henüz yapılmadı.

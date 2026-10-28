@@ -244,3 +244,30 @@ mark.find-hit.current { background: var(--vscode-editor-findMatchHighlightBackgr
 
 /* An empty paragraph occupies a writable line in Live and Reading alike. */
 .md-body p:empty { min-height: 1lh; }
+
+/* Compact, theme-aware command groups; SVGs stay crisp at every zoom level. */
+#formatbar { gap: 12px; padding: 8px 12px; min-height: 51px; flex-wrap: nowrap; }
+.toolbar-actions { display: flex; align-items: center; flex: 1; min-width: 0; gap: 8px; overflow-x: auto; scrollbar-width: none; }
+.toolbar-actions::-webkit-scrollbar { display: none; }
+.toolbar-group { display: flex; align-items: center; gap: 3px; padding-right: 8px; border-right: 1px solid var(--md-border); flex-shrink: 0; }
+.toolbar-group:last-child { border-right: 0; padding-right: 0; }
+#formatbar button[data-cmd] { display: inline-flex; align-items: center; justify-content: center; gap: 7px; height: 32px; min-width: 32px; padding: 0 8px; border-radius: 7px; transition: background .12s, border-color .12s; line-height: 1.2; font-size: 12px; }
+#formatbar button[data-cmd] svg { width: 17px; height: 17px; flex-shrink: 0; }
+#formatbar button[data-cmd]:hover:not(:disabled) { background: var(--vscode-toolbar-hoverBackground, var(--md-hover)); border-color: transparent; }
+#formatbar button[data-cmd].on { color: var(--md-accent); background: var(--vscode-toolbar-activeBackground, var(--md-hover)); border-color: var(--md-border); }
+#formatbar button[data-cmd]:disabled { opacity: .27; }
+#formatbar button[data-cmd][hidden] { display: none; }
+.seg { flex-shrink: 0; border-radius: 9px; padding: 3px; }
+.seg button { padding: 6px 10px; font-size: 12px; }
+#pkgmark { font-variant-numeric: tabular-nums; font-size: 10px; }
+@media (max-width: 850px) { #formatbar button[data-cmd] span { display: none; } }
+@media (max-width: 520px) { #formatbar { flex-wrap: wrap; gap: 6px; } .toolbar-actions { flex-basis: 100%; } #formatbar .seg { margin-left: auto; } }
+.source-dialog { width: min(720px, calc(100vw - 32px)); max-height: calc(100vh - 48px); overflow: auto; padding: 24px; border: 1px solid var(--md-border); border-radius: 12px; background: var(--vscode-editorWidget-background, var(--vscode-editor-background)); color: inherit; box-shadow: 0 16px 64px #0005; }
+.source-dialog::backdrop { background: #0006; }
+.source-dialog form { display: flex; flex-direction: column; gap: 14px; }
+.source-dialog h2 { font-size: 18px; margin: 0 0 4px; }
+.source-dialog label { display: flex; flex-direction: column; gap: 8px; font-size: 12px; }
+.source-dialog textarea { width: 100%; resize: vertical; min-height: 150px; padding: 12px; border: 1px solid var(--md-border); border-radius: 7px; background: var(--vscode-input-background); color: var(--vscode-input-foreground); font: 13px/1.6 var(--vscode-editor-font-family, monospace); }
+.source-dialog textarea:focus { outline: 1px solid var(--md-accent); }
+.source-preview-label { font-size: 12px; color: var(--vscode-descriptionForeground); }
+.source-preview.md-body { width: 100%; max-height: 240px; overflow: auto; margin: 0; padding: 12px; border: 1px solid var(--md-border); border-radius: 7px; }

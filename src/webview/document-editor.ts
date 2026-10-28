@@ -1,3 +1,4 @@
+import { openSourceDialog, type SpecialKind } from "./source-dialog";
 import { CodeHighlight } from "./code-highlight";
 import { prepareTaskLists, taskCheckbox } from "./task-lists";
 import { decodeSource } from "../shared/md-utils";
@@ -9,6 +10,7 @@ import TaskItem from "@tiptap/extension-task-item";
 import Image from "@tiptap/extension-image";
 import { Plugin, PluginKey, EditorState, TextSelection } from "@tiptap/pm/state";
 import { DOMSerializer } from "@tiptap/pm/model";
+import type { Node as DocumentNode } from "@tiptap/pm/model";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import type { SelectionBookmark } from "@tiptap/pm/state";
 import DOMPurify from "dompurify";
@@ -48,11 +50,21 @@ function preserved(inline: boolean) {
       getAttrs: (el) => ({ source: decodeSource(el.getAttribute("data-md-source") || ""), html: el.innerHTML }),
     }],
     renderHTML: ({ node }) => [inline ? "span" : "div", { "data-md-source": encodeURIComponent(node.attrs.source) }, node.attrs.source],
-    addNodeView: () => ({ node }) => {
+    addNodeView: () => ({ node, getPos, editor }) => {
       const dom = document.createElement(inline ? "span" : "div");
       dom.className = "preserved-content";
       dom.setAttribute("data-md-source", encodeURIComponent(node.attrs.source));
-      dom.setAttribute("title", "Kaynağı düzenlemek için Kaynak modunu kullanın");
+      dom.setAttribute("title", "Düzenlemek için çift tıklayın");
+      dom.addEventListener("dblclick", (event) => {
+        event.preventDefault();
+        const source = String(node.attrs.source);
+        const kind: SpecialKind = source.startsWith("$") ? "math" : source.startsWith("```mermaid") ? "mermaid" : "html";
+        openSourceDialog({ kind, source, save: (markdown) => {
+          const position = getPos();
+          if (typeof position !== "number" || editor.state.doc.nodeAt(position)?.type !== node.type) return;
+          editor.chain().focus().insertContentAt({ from: position, to: position + node.nodeSize }, importMarkdown(markdown)).run();
+        } });
+      });
       dom.innerHTML = DOMPurify.sanitize(node.attrs.html);
       return { dom, ignoreMutation: () => true };
     },
@@ -77,7 +89,8 @@ function importMarkdown(text: string): string {
   // Parse in an inert document, extract source before sanitization, then sanitize
   // the result. DOMPurify intentionally rejects comment-like attribute values
   // (including Mermaid arrows), so source attributes use URI encoding.
-  const host = new DOMParser().parseFromString(pipeline.renderFullWithFm(text), "text/html").body;
+  const host = new DOMParser().parseFromString("<body></body>", "text/html").body;
+  host.innerHTML = pipeline.renderFullWithFm(text);
   host.querySelectorAll(".frontmatter, .mermaid, .katex-display, .katex").forEach((el) => {
     if (!host.contains(el)) return;
     const display = el.matches(".frontmatter, .mermaid, .katex-display");
@@ -88,16 +101,29 @@ function importMarkdown(text: string): string {
     const wrapper = document.createElement(display ? "div" : "span");
     wrapper.dataset.mdSource = encodeURIComponent(source);
     wrapper.appendChild(el.cloneNode(true));
-    el.replaceWith(wrapper);
+    const equation = el.classList.contains("katex-display") ? el.closest("eqn") : null;
+    const target = equation?.parentElement?.tagName === "SECTION" ? equation.parentElement : el;
+    target.replaceWith(wrapper);
   });
   // Keep HTML constructs outside the editing schema as source-preserving inline
   // objects, rather than silently dropping them when another paragraph changes.
-  host.querySelectorAll("details, summary, u, sub, sup, kbd, abbr, small, ins").forEach((el) => {
-    if (!host.contains(el) || el.closest("[data-md-source]")) return;
-    const wrapper = document.createElement(el.matches("details,summary") ? "div" : "span");
+  host.querySelectorAll("details, summary, u, sub, sup, kbd, abbr, small, ins, mark, time, span[style], span[class], article, section, aside, header, footer, nav, figure, figcaption, address, dl, dt, dd, video, audio, picture, div, table").forEach((el) => {
+    if (!host.contains(el) || el.closest("pre,code,[data-md-source]")) return;
+    if (el.tagName === "TABLE" && !el.querySelector("[colspan],[rowspan],[style]") && el.querySelector("tr")?.querySelector("th")) return;
+    const wrapper = document.createElement(el.matches("details,summary,article,section,aside,header,footer,nav,figure,figcaption,address,dl,dt,dd,video,audio,picture,div,table") ? "div" : "span");
     wrapper.dataset.mdSource = encodeURIComponent(el.outerHTML);
     wrapper.appendChild(el.cloneNode(true)); el.replaceWith(wrapper);
   });
+  const comments: Comment[] = [];
+  const walker = document.createTreeWalker(host, NodeFilter.SHOW_COMMENT);
+  let comment: Node | null;
+  while ((comment = walker.nextNode())) comments.push(comment as Comment);
+  for (const comment of comments) {
+    if (comment.parentElement?.closest("[data-md-source],pre,code")) continue;
+    const marker = document.createElement(comment.parentElement?.closest("p,li,h1,h2,h3,h4,h5,h6") ? "span" : "div");
+    marker.dataset.mdSource = encodeURIComponent(`<!--${comment.data}-->`);
+    comment.replaceWith(marker);
+  }
   // Import plain code text into the model. Rendered token spans can trigger
   // whitespace normalization in the HTML parser; decorations restore colors.
   host.querySelectorAll("pre code").forEach((code) => {
@@ -119,6 +145,9 @@ export interface DocumentEditorOptions {
 export class DocumentEditor {
   readonly editor: Editor;
   private markdown = "";
+  private serialized = new WeakMap<DocumentNode, string>();
+  private pending = false;
+  private serializeTimer: ReturnType<typeof setTimeout> | undefined;
   private bookmarks = new Map<string, SelectionBookmark>();
   private matches: { from: number; to: number }[] = [];
   private query: RegExp | null = null;
@@ -178,16 +207,43 @@ export class DocumentEditor {
       },
       onSelectionUpdate: () => options.selectionChanged(),
       onUpdate: () => {
-        const doc = this.editor.state.doc;
-        this.markdown = doc.childCount === 1 && doc.firstChild?.type.name === "paragraph" && doc.firstChild.content.size === 0
-          ? "" : converter.turndown(this.editor.getHTML());
-        options.changed(this.markdown);
+        this.pending = true;
+        clearTimeout(this.serializeTimer);
+        this.serializeTimer = setTimeout(() => this.flush(), 100);
+        options.selectionChanged();
         if (this.query) this.find(this.query, this.activeMatch);
       },
     });
   }
 
+  flush(): void {
+    clearTimeout(this.serializeTimer);
+    if (!this.pending) return;
+    this.pending = false;
+    this.markdown = this.serializeDocument();
+    this.options.changed(this.markdown);
+  }
+
+  private serializeDocument(): string {
+    const doc = this.editor.state.doc;
+    if (doc.childCount === 1 && doc.firstChild?.type.name === "paragraph" && doc.firstChild.content.size === 0) return "";
+    const serializer = DOMSerializer.fromSchema(this.editor.schema);
+    const parts: string[] = [];
+    doc.forEach((node) => {
+      let text = this.serialized.get(node);
+      if (text === undefined) {
+        const container = document.createElement("div");
+        container.appendChild(serializer.serializeNode(node));
+        text = converter.turndown(container);
+        this.serialized.set(node, text);
+      }
+      parts.push(text);
+    });
+    return parts.filter((part) => part !== "").join("\n\n");
+  }
+
   load(markdown: string): void {
+    this.flush();
     if (markdown === this.markdown) return;
     const { from, to } = this.editor.state.selection;
     this.markdown = markdown;
@@ -200,11 +256,20 @@ export class DocumentEditor {
     const doc = this.editor.state.doc;
     this.editor.view.dispatch(this.editor.state.tr.setSelection(TextSelection.between(
       doc.resolve(Math.min(from, max)), doc.resolve(Math.min(to, max)))));
+    this.serializeDocument(); // Prime immutable-node caches once during load.
     if (this.query) this.find(this.query, this.activeMatch);
   }
 
   replaceMarkdown(markdown: string): void {
     this.editor.commands.setContent(importMarkdown(markdown));
+  }
+
+  insertSpecial(kind: "math" | "mermaid"): void {
+    const bookmark = this.editor.state.selection.getBookmark();
+    openSourceDialog({ kind, source: kind === "math" ? "$$x^2 + y^2 = z^2$$" : "```mermaid\nflowchart LR\n    A[Başlangıç] --> B[Bitiş]\n```", save: (source) => {
+      this.editor.view.dispatch(this.editor.state.tr.setSelection(bookmark.resolve(this.editor.state.doc)));
+      this.editor.chain().focus().insertContent(importMarkdown(source)).run();
+    } });
   }
 
   bookmark(key: string): void { this.bookmarks.set(key, this.editor.state.selection.getBookmark()); }
@@ -257,5 +322,5 @@ export class DocumentEditor {
     if (tr.docChanged) this.editor.view.dispatch(tr);
   }
 
-  destroy(): void { this.editor.destroy(); }
+  destroy(): void { clearTimeout(this.serializeTimer); this.editor.destroy(); }
 }

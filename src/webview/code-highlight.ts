@@ -4,26 +4,31 @@ import { Plugin } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import { highlightCode } from "../shared/code-highlight";
 
+type TokenRange = { from: number; to: number; className: string };
+const tokens = new WeakMap<DocumentNode, TokenRange[]>();
 function highlight(doc: DocumentNode): DecorationSet {
   const decorations: Decoration[] = [];
   doc.descendants((node, position) => {
     if (node.type.name !== "codeBlock") return;
-    const language = node.attrs.language;
-    if (!language) return false;
-    const html = highlightCode(node.textContent, language);
-    if (html === null) return false;
-    const container = document.createElement("div");
-    container.innerHTML = html;
-    const visit = (element: Node, offset: number): number => {
-      const length = element.textContent?.length || 0;
-      if (element instanceof HTMLElement && element.className && length) {
-        decorations.push(Decoration.inline(offset, offset + length, { class: element.className }));
+    let ranges = tokens.get(node);
+    if (!ranges) {
+      ranges = [];
+      const language = node.attrs.language;
+      const html = language ? highlightCode(node.textContent, language) : null;
+      if (html !== null) {
+        const container = document.createElement("div"); container.innerHTML = html;
+        const visit = (element: Node, offset: number): number => {
+          const length = element.textContent?.length || 0;
+          if (element instanceof HTMLElement && element.className && length) ranges!.push({ from: offset, to: offset + length, className: element.className });
+          let cursor = offset;
+          for (const child of Array.from(element.childNodes)) cursor += visit(child, cursor);
+          return length;
+        };
+        visit(container, 0);
       }
-      let cursor = offset;
-      for (const child of Array.from(element.childNodes)) cursor += visit(child, cursor);
-      return length;
-    };
-    visit(container, position + 1);
+      tokens.set(node, ranges);
+    }
+    for (const range of ranges) decorations.push(Decoration.inline(position + 1 + range.from, position + 1 + range.to, { class: range.className }));
     return false;
   });
   return DecorationSet.create(doc, decorations);

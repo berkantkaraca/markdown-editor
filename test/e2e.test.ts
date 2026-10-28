@@ -7,7 +7,7 @@ const SAMPLE = "# Başlık\n\nGiriş paragrafı.\n\n- [ ] görev bir\n- [x] gör
 const SKELETON = `<!DOCTYPE html><html lang="tr"><head><meta charset="UTF-8"></head><body class="vscode-dark">${fs.readFileSync(path.join(__dirname, "../../src/webview/layout.html"), "utf8")}</body></html>`;
 
 let win: any, doc: any, app: any, posted: any[];
-const pause = (ms = 200) => new Promise((resolve) => setTimeout(resolve, ms));
+const pause = (ms = 350) => new Promise((resolve) => setTimeout(resolve, ms));
 function send(data: any) { win.dispatchEvent(new win.MessageEvent("message", { data: { proto: 1, ...data } })); }
 function receive(text: string, version = 1) { send({ type: "update", text, version, isDirty: false }); }
 function edits() { return posted.filter((message) => message.type === "edit"); }
@@ -56,7 +56,7 @@ describe("belge motoru: tek yüzey", () => {
     assert.equal(root().querySelectorAll('[contenteditable="true"]').length, 1);
     assert.equal(root().querySelectorAll(".block, textarea, .tablebar").length, 0);
     assert.equal(root().querySelector("h1").textContent, "Başlık");
-    assert.equal(doc.querySelector("#pkgmark").textContent, "paket-8");
+    assert.equal(doc.querySelector("#pkgmark").textContent, "paket-9");
   });
   it("odak kaybı kaynağı normalize etmez", async () => {
     load("Başlık\n======\n\n*   madde\n\n");
@@ -171,7 +171,7 @@ describe("Markdown ve modlar", () => {
   });
   it("dış revizyon önceki belgenin geri alma geçmişini temizler", () => {
     select("Giriş"); type("Yerel");
-    app.sync.flush(); const request = edits()[0];
+    app.rich.flush(); app.sync.flush(); const request = edits()[0];
     send({ type: "edit-result", requestId: request.requestId, text: app.sync.text, version: 2 });
     receive("Tamamen farklı belge", 3);
     app.rich.editor.commands.undo();
@@ -243,5 +243,21 @@ describe("görev listesi aktarımı", () => {
     assert.match(edits()[0].text, /\[ \] Bir görev/);
     assert.match(edits()[0].text, /\[x\] İkinci görev/);
     assert.match(edits()[0].text, /Normal madde/);
+  });
+});
+
+
+describe("geniş HTML aktarımı", () => {
+  it("özel kapsayıcıları, stilleri, yorumları ve birleşik hücreleri korur", async () => {
+    const html = '<!-- kalıcı yorum -->\n\n<article class="note"><div data-note="özel"><span style="color:red">Kırmızı</span></div><dl><dt>Terim</dt><dd>Açıklama</dd></dl></article>\n\n<table><tr><th colspan="2">Birleşik</th></tr><tr><td>A</td><td>B</td></tr></table>\n\nSon';
+    load(html);
+    select("Son"); type("Düzenlendi"); await pause();
+    const output = edits()[0].text;
+    assert.ok(output.includes('<!-- kalıcı yorum -->'), output);
+    assert.ok(output.includes('<article class="note">'));
+    assert.ok(output.includes('data-note="özel"'));
+    assert.ok(output.includes('style="color:red"'));
+    assert.ok(output.includes('<dl><dt>Terim</dt><dd>Açıklama</dd></dl>'));
+    assert.ok(output.includes('colspan="2"'));
   });
 });

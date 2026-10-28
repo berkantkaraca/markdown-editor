@@ -2,7 +2,7 @@
   "name": "karaca-md-editor",
   "displayName": "Karaca MD",
   "description": "Word benzeri tek yüzeyli WYSIWYG Markdown editörü. Kaynak, canlı, split ve okuma modları.",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "publisher": "vibecode",
   "license": "MIT",
   "repository": {
@@ -121,7 +121,10 @@
     "lint": "tsc --noEmit",
     "pretest": "node esbuild.js --only=test-bundle",
     "test": "tsc -p tsconfig.test.json && node --test \"dist-test/test/**/*.test.js\"",
-    "test:browser": "node esbuild.js --only=test-bundle && node --test test/browser.cjs"
+    "test:browser": "node esbuild.js --only=test-bundle && node --test test/browser.cjs",
+    "test:extension-host": "npm run compile && node --test test/extension-host.cjs",
+    "test:cross-browser": "node esbuild.js --only=test-bundle && node test/run-browsers.cjs",
+    "test:performance": "node esbuild.js --only=test-bundle && node test/run-performance.cjs"
   },
   "devDependencies": {
     "@types/markdown-it": "^14.1.2",

@@ -26,8 +26,8 @@ işlemleri belge modeli üzerinde çalışır. Boş belgeye doğrudan yazılabil
 
 Panodan görseller dosyanın yanındaki assets klasörüne kaydedilir. WikiLink,
 içindekiler, geri bağlantılar, hızlı not ve günlük not komutları kullanılabilir.
-Matematik, Mermaid ve YAML ön madde görüntülenir; kaynakları Kaynak modunda
-düzenlenir. Dış dosya değişikliğiyle çakışan yerel taslak kurtarma düğmesinde tutulur.
+Matematik ve Mermaid araç çubuğundan eklenebilir; Canlı modda çift tıklayarak
+kaynaklarını önizlemeli pencerede düzenleyebilirsin. YAML ön madde Kaynak modunda düzenlenir. Dış dosya değişikliğiyle çakışan yerel taslak kurtarma düğmesinde tutulur.
 
 ## Geliştirme ve deneme
 
@@ -40,12 +40,12 @@ npm run test:browser
 ```
 
 VS Code'da F5 ile Extension Development Host açın; `sample.md` dosyasını açarak
-deneyin. Araç çubuğunda **paket-8** görünmelidir. Kurulu eski eklentiyi kullanıyorsanız
+deneyin. Araç çubuğunda **paket-9** görünmelidir. Kurulu eski eklentiyi kullanıyorsanız
 Extension Development Host içindeki sürümü açtığınızdan emin olun.
 
 Tarayıcı testleri Windows'ta Chrome/Edge'i bulur. Başka bir kurulum için
 `CHROME_PATH` kullanın veya `npx playwright install chromium` çalıştırın.
-Test ekran görüntüsü `out/editor-paket-8.png` dosyasına yazılır.
+Test ekran görüntüsü `out/editor-paket-9.png` dosyasına yazılır.
 
 Ayarlar: `karacaMd.defaultMode` (`live`, `source`, `split`, `reading`),
 `karacaMd.wordWrap`, `karacaMd.lineNumbers`.
@@ -57,3 +57,16 @@ HTML/Markdown uzantıları içeren belgeleri Kaynak modunda düzenleyin. Ayrınt
 
 Enter ile eklenen boş paragraflar, kaydetme ve yeniden açma sırasında korunmak için
 Markdown kaynağında `<p></p>` olarak saklanır.
+
+## Ek doğrulama
+
+```powershell
+npx playwright install chromium firefox webkit
+npm run test:cross-browser
+npm run test:extension-host
+npm run test:performance
+```
+
+Extension Host testi ayrı bir profil ve `out/extension-host/roundtrip.md` kullanır;
+açık çalışma belgelerini değiştirmez. `VSCODE_EXECUTABLE` ile VS Code yürütülebilir
+dosyası belirtilebilir. İşletim sistemi doğrulama durumu TODO.md, ölçümler PERFORMANCE.md içindedir.

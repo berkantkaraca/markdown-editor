@@ -7,6 +7,7 @@ interface FormatDeps {
   getMode(): string;
   getEditor(): Editor;
   getSource(): EditorView;
+  insertSpecial(kind: "math" | "mermaid"): void;
   undo(): void;
   redo(): void;
   history(): { undo: boolean; redo: boolean };
@@ -78,6 +79,15 @@ export function attachFormatbar(deps: FormatDeps) {
     const rect = anchor.getBoundingClientRect();
     popup.style.left = `${Math.max(4, rect.left)}px`; popup.style.top = `${rect.bottom + 4}px`;
     document.body.appendChild(popup);
+    popup.addEventListener("keydown", (event) => {
+      if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+      event.preventDefault();
+      const choices = Array.from(popup!.querySelectorAll<HTMLButtonElement>("button"));
+      const index = choices.indexOf(document.activeElement as HTMLButtonElement);
+      const next = event.key === "Home" ? 0 : event.key === "End" ? choices.length - 1
+        : (index + (event.key === "ArrowDown" ? 1 : -1) + choices.length) % choices.length;
+      choices[next]?.focus();
+    });
     popup.querySelector("button")?.focus();
   }
   function dialog(kind: "link" | "image") {
@@ -136,6 +146,11 @@ export function attachFormatbar(deps: FormatDeps) {
       }))]); return;
     }
     if (command === "link" || command === "image") return dialog(command);
+    if (command === "math" || command === "mermaid") {
+      if (live()) deps.insertSpecial(command);
+      else insert(command === "math" ? "$$x^2$$" : "\n```mermaid\nflowchart LR\n    A --> B\n```\n");
+      return;
+    }
     if (live()) {
       const chain = editor().chain().focus();
       if (command === "bold") chain.toggleBold().run();
@@ -161,6 +176,7 @@ export function attachFormatbar(deps: FormatDeps) {
   function refreshBar() {
     bar.classList.remove("hidden");
     const reading = deps.getMode() === "reading", history = deps.history();
+    bar.querySelector<HTMLElement>(".toolbar-actions")?.classList.toggle("hidden", reading);
     bar.querySelectorAll<HTMLElement>(".fsep").forEach((separator) => { separator.hidden = reading; });
     const states: Record<string, string> = { bold: "bold", italic: "italic", strike: "strike", code: "code",
       bullet: "bulletList", numbered: "orderedList", task: "taskList", quote: "blockquote" };
@@ -173,6 +189,17 @@ export function attachFormatbar(deps: FormatDeps) {
       if (states[command]) button.setAttribute("aria-pressed", String(active));
     }
   }
+  bar.querySelector(".toolbar-actions")?.addEventListener("keydown", (raw) => {
+    const event = raw as KeyboardEvent;
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+    const available = buttons.filter((button) => !button.hidden && !button.disabled);
+    const index = available.indexOf(event.target as HTMLButtonElement);
+    if (index < 0) return;
+    event.preventDefault();
+    const next = event.key === "Home" ? 0 : event.key === "End" ? available.length - 1
+      : (index + (event.key === "ArrowRight" ? 1 : -1) + available.length) % available.length;
+    available[next]?.focus();
+  });
   buttons.forEach((button) => {
     button.addEventListener("mousedown", (event) => event.preventDefault());
     button.addEventListener("click", () => run(button.dataset.cmd!, button));

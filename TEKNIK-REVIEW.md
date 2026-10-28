@@ -1,4 +1,4 @@
-> Tarihsel inceleme: Bu belge paket-1 mimarisini anlatır. Güncel paket-8 mimarisi için ARCHITECTURE.md dosyasına bakın.
+> Tarihsel inceleme: Bu belge paket-1 mimarisini anlatır. Güncel paket-9 mimarisi için ARCHITECTURE.md dosyasına bakın.
 
 # Karaca MD Editor — Teknik Review
 

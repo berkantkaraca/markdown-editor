@@ -33,8 +33,10 @@ let find: ReturnType<typeof attachFindbar> | undefined;
 const sync = new DocumentSync({
   send: post,
   changed: (text, external) => {
-    if (external) { rich.load(text); source.load(text); }
-    else if (mode === "live") source.load(text);
+    if (external) {
+      if (mode === "live") rich.load(text);
+      else source.load(text);
+    }
     schedulePreview();
     toolbar?.refreshBar();
   },
@@ -49,8 +51,8 @@ const rich = new DocumentEditor({
   element: liveRoot,
   changed: (text) => {
     sync.edit(text);
-    source.load(text);
     resolveImages(liveRoot);
+    void runMermaid(liveRoot);
     toolbar?.refreshBar();
     if (find?.isOpen()) find.refresh();
   },
@@ -62,6 +64,7 @@ const source = new SourceEditor($("cm-host"), (text) => { sync.edit(text); toolb
   (file) => saveImage(file, "source"));
 toolbar = attachFormatbar({
   getMode: () => mode, getEditor: () => rich.editor, getSource: () => source.view,
+  insertSpecial: (kind) => rich.insertSpecial(kind),
   undo: () => { if (mode === "live") rich.editor.commands.undo(); else source.undo(); toolbar?.refreshBar(); },
   redo: () => { if (mode === "live") rich.editor.commands.redo(); else source.redo(); toolbar?.refreshBar(); },
   history: () => mode === "live" ? { undo: rich.editor.can().undo(), redo: rich.editor.can().redo() }
@@ -109,8 +112,10 @@ function refreshPreview(): void {
 function setMode(next: Mode): void {
   toolbar?.close();
   find?.closeFind();
+  rich.flush();
   sync.flush();
   if (mode === "live" && next !== "live") {
+    source.load(sync.text);
     pendingImages.forEach((target, nonce) => {
       if (target === "live") {
         source.bookmark(nonce);
@@ -210,19 +215,21 @@ $("split-preview").addEventListener("scroll", () => scrollTogether($("split-prev
 
 document.addEventListener("keydown", (event) => {
   if (!(event.ctrlKey || event.metaKey)) return;
-  if (event.key.toLowerCase() === "s") { event.preventDefault(); sync.save(); }
+  if (event.key.toLowerCase() === "s") { event.preventDefault(); rich.flush(); sync.save(); }
   if (event.key.toLowerCase() === "f" && !event.defaultPrevented && mode !== "source" && !(mode === "split" && source.view.hasFocus)) {
     event.preventDefault(); find?.openFind();
   }
 }, true);
-window.addEventListener("blur", () => sync.flush());
+window.addEventListener("blur", () => { rich.flush(); sync.flush(); });
 window.addEventListener("message", (event) => {
   const message = event.data;
   if (!message || (message.proto !== undefined && message.proto !== PROTO)) return;
   if (message.type === "update" && typeof message.text === "string" && typeof message.version === "number") {
+    rich.flush();
     sync.receive(message);
     resolveImages(liveRoot); void runMermaid(liveRoot);
   } else if (message.type === "edit-result") {
+    rich.flush();
     sync.acknowledge(message.requestId, message, !!message.conflict);
     resolveImages(liveRoot);
   } else if (message.type === "config") {
@@ -243,7 +250,7 @@ window.addEventListener("message", (event) => {
   } else if (message.type === "reveal-line") reveal(Math.max(0, Number(message.line) || 0));
 });
 new MutationObserver(theme).observe(document.body, { attributes: true, attributeFilter: ["class"] });
-window.addEventListener("pagehide", () => { sync.flush(); rich.destroy(); source.view.destroy(); });
+window.addEventListener("pagehide", () => { rich.flush(); sync.flush(); rich.destroy(); source.view.destroy(); });
 theme(); setMode(mode);
 const recovery = vscode.getState()?.recoveryDraft;
 if (recovery) showRecovery(recovery);

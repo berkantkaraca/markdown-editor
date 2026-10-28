@@ -1,6 +1,8 @@
 const { test, before, beforeEach, after, afterEach } = require("node:test");
 const assert = require("node:assert/strict");
-const { chromium } = require("playwright");
+const engines = require("playwright");
+const browserName = process.env.KARACA_BROWSER || "chromium";
+const modifier = process.platform === "darwin" ? "Meta" : "Control";
 const fs = require("node:fs");
 const path = require("node:path");
 const http = require("node:http");
@@ -24,8 +26,8 @@ before(async () => {
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   address = `http://127.0.0.1:${server.address().port}`;
   const candidates = [process.env.CHROME_PATH, "C:/Program Files/Google/Chrome/Application/chrome.exe", "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe"].filter(Boolean);
-  const executablePath = candidates.find((candidate) => fs.existsSync(candidate));
-  browser = await chromium.launch({ headless: true, ...(executablePath ? { executablePath } : {}) });
+  const executablePath = process.env.CI ? undefined : candidates.find((candidate) => fs.existsSync(candidate));
+  browser = await engines[browserName].launch({ headless: true, ...(browserName === "chromium" && executablePath ? { executablePath } : {}) });
 });
 beforeEach(async () => {
   errors.length = 0;
@@ -67,12 +69,12 @@ test("gerçek klavye: paragraf birleştirme, Enter, kalın yazım, geri alma", a
   await page.keyboard.press("Backspace");
   assert.match(await surface.innerText(), /Birinci paragraf.İkinci paragraf./);
   await page.keyboard.press("Enter");
-  await page.keyboard.press("Control+b");
+  await page.keyboard.press(`${modifier}+b`);
   await page.keyboard.type("Kalın deneme");
   assert.equal(await surface.locator("strong").innerText(), "Kalın deneme");
-  await page.keyboard.press("Control+z");
+  await page.keyboard.press(`${modifier}+z`);
   assert.equal(await surface.locator("strong").count(), 0);
-  await page.keyboard.press("Control+Shift+z");
+  await page.keyboard.press(`${modifier}+Shift+z`);
   assert.equal(await surface.locator("strong").innerText(), "Kalın deneme");
 });
 
@@ -81,7 +83,9 @@ test("pano HTML yapıştırma model üzerinden biçimli kaydedilir", async () =>
   await surface.click();
   await page.evaluate(() => {
     const data = new DataTransfer(); data.setData("text/html", '<p>Yapıştırılan <strong>metin</strong></p>');
-    document.querySelector(".tiptap").dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true }));
+    const event = new ClipboardEvent("paste", { bubbles: true, cancelable: true });
+    Object.defineProperty(event, "clipboardData", { value: data });
+    document.querySelector(".tiptap").dispatchEvent(event);
   });
   await page.waitForFunction(() => window.__posted.some((message) => message.type === "edit" && message.text.includes("**metin**")));
   assert.equal(await surface.locator("strong").innerText(), "metin");
@@ -95,7 +99,7 @@ test("örnek belge: tek yüzey, gerçek Mermaid render ve belge görünümü", a
   assert.equal(await page.locator("#live-root textarea, #live-root .block, #live-root .tablebar").count(), 0);
   await page.locator("#live-wrap").evaluate((element) => { element.scrollTop = 0; });
   fs.mkdirSync(path.join(__dirname, "../out"), { recursive: true });
-  await page.screenshot({ path: path.join(__dirname, "../out/editor-paket-8.png") });
+  await page.screenshot({ path: path.join(__dirname, "../out/editor-paket-9.png") });
   await page.getByRole("tab", { name: "Okuma", exact: true }).click();
   await page.getByRole("tab", { name: "Canlı", exact: true }).click();
   assert.equal(await page.locator('#live-root [contenteditable="true"]').count(), 1);
@@ -136,9 +140,9 @@ test("canlı ve okuma: çerçevesiz alan ve görev satırları aynı ölçülerd
     }
     assert.ok(Math.abs(live.tasks[i].box.y - live.tasks[i].content.y) < 7, "kutu metinle aynı satırda");
   }
-  await page.screenshot({ path: path.join(__dirname, "../out/reading-paket-8.png") });
+  await page.screenshot({ path: path.join(__dirname, "../out/reading-paket-9.png") });
   await page.getByRole("tab", { name: "Canlı", exact: true }).click();
-  await page.screenshot({ path: path.join(__dirname, "../out/live-paket-8.png") });
+  await page.screenshot({ path: path.join(__dirname, "../out/live-paket-9.png") });
 });
 
 
@@ -193,11 +197,97 @@ test("referans kod paleti Java ve TypeScript için Canlı/Okuma modlarında ayn�
   assert.equal(live.background, "rgb(40, 40, 40)");
   assert.deepEqual(live.tokens, ["rgb(78, 201, 176)", "rgb(78, 201, 176)", "rgb(220, 220, 170)", "rgb(197, 134, 192)", "rgb(206, 145, 120)", "rgb(86, 156, 214)", "rgb(156, 220, 254)"]);
   assert.deepEqual(live.source.map((source) => source.trimEnd()), [java, ts]);
-  await page.screenshot({ path: path.join(__dirname, "../out/code-live-paket-8.png") });
+  await page.screenshot({ path: path.join(__dirname, "../out/code-live-paket-9.png") });
   await page.getByRole("tab", { name: "Okuma", exact: true }).click();
   const reading = await colors("#reading-root");
   assert.deepEqual(reading.tokens, live.tokens);
   assert.equal(reading.background, live.background);
   assert.deepEqual(reading.source.map((source) => source.trimEnd()), [java, ts]);
-  await page.screenshot({ path: path.join(__dirname, "../out/code-reading-paket-8.png") });
+  await page.screenshot({ path: path.join(__dirname, "../out/code-reading-paket-9.png") });
+});
+
+
+test("büyük dosya performans ölçümü", { skip: !process.env.KARACA_PERF_LABEL }, async () => {
+  const text = Array.from({ length: Number(process.env.KARACA_PERF_SECTIONS) || 1000 }, (_, i) => `## Bölüm ${i}\n\n${"Büyük dosyada seçilebilir ve düzenlenebilir metin. ".repeat(5)}\n\n${i % 10 === 0 ? "```typescript\nexport function sample(value: number) { return value + 1; }\n```\n\n" : ""}`).join("");
+  const metrics = await page.evaluate(async (text) => {
+    const app = window.__karacaTest;
+    const start = performance.now();
+    app.sync.receive({ text, version: 100 });
+    const loaded = performance.now() - start;
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const edits = [];
+    for (let i = 0; i < 5; i++) {
+      const now = performance.now();
+      app.rich.editor.view.dispatch(app.rich.editor.state.tr.insertText("x", 1));
+      edits.push(performance.now() - now);
+    }
+    const serializing = performance.now();
+    app.rich.flush();
+    return { loadedMs: loaded, editMs: edits, flushMs: performance.now() - serializing, paragraphs: app.rich.editor.state.doc.childCount };
+  }, text);
+  const report = { label: process.env.KARACA_PERF_LABEL, platform: process.platform, bytes: Buffer.byteLength(text), ...metrics };
+  fs.mkdirSync(path.join(__dirname, "../out"), { recursive: true });
+  fs.writeFileSync(path.join(__dirname, `../out/performance-${process.env.KARACA_PERF_LABEL}.json`), JSON.stringify(report, null, 2));
+  console.log(JSON.stringify(report));
+  assert.ok(metrics.loadedMs < 30000, "yükleme 30 saniyeyi aşmamalı");
+  assert.ok(Math.max(...metrics.editMs) < 3000, "yazım 3 saniyeyi aşmamalı");
+});
+
+
+test("canlı matematik ve Mermaid pencereleri düzenler, iptal eder ve kaydeder", async () => {
+  await page.getByRole("button", { name: "Matematik", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByRole("textbox", { name: "Kaynak", exact: true }).fill("$$x^3$$");
+  await dialog.locator(".katex").waitFor();
+  await dialog.getByRole("button", { name: "Uygula", exact: true }).click();
+  await page.locator("#live-root .katex").dblclick();
+  await dialog.getByRole("textbox", { name: "Kaynak", exact: true }).fill("$$y^4$$");
+  await dialog.getByRole("button", { name: "Uygula", exact: true }).click();
+  await page.waitForFunction(() => window.__posted.some((message) => message.type === "edit" && message.text.includes("$$y^4$$")));
+  await page.getByRole("button", { name: "Diyagram", exact: true }).click();
+  await dialog.getByRole("textbox", { name: "Kaynak", exact: true }).fill("```mermaid\nflowchart LR\n    Start --> Finish\n```");
+  await dialog.locator(".mermaid svg").waitFor();
+  await dialog.getByRole("button", { name: "Uygula", exact: true }).click();
+  await page.locator("#live-root .mermaid svg").waitFor();
+  await page.locator("#live-root .mermaid").dblclick();
+  assert.match(await dialog.getByRole("textbox", { name: "Kaynak", exact: true }).inputValue(), /Start --> Finish/);
+  await dialog.getByRole("textbox", { name: "Kaynak", exact: true }).fill("Silinmemeli");
+  await dialog.getByRole("button", { name: "Vazgeç", exact: true }).click();
+  await page.waitForFunction(() => window.__karacaTest.sync.text.includes("Start --> Finish"));
+  assert.ok(!(await page.evaluate(() => window.__karacaTest.sync.text)).includes("Silinmemeli"));
+});
+
+test("araç çubuğu dar ekranda erişilebilir ve simgeler etiketlidir", async () => {
+  for (const button of await page.locator('#formatbar button[data-cmd]').all()) {
+    assert.ok(await button.getAttribute("aria-label"));
+    assert.equal(await button.locator("svg").count(), 1);
+  }
+  await page.getByRole("button", { name: "Kalın", exact: true }).focus();
+  await page.keyboard.press("ArrowRight");
+  assert.equal(await page.locator(":focus").getAttribute("aria-label"), "İtalik");
+  await page.setViewportSize({ width: 390, height: 800 });
+  assert.equal(await page.evaluate(() => document.body.scrollWidth > innerWidth), false);
+  await page.getByRole("tab", { name: "Okuma", exact: true }).click();
+  await page.getByRole("tab", { name: "Canlı", exact: true }).click();
+  await page.screenshot({ path: path.join(__dirname, "../out/toolbar-mobile-paket-9.png") });
+});
+
+test("IME bileşimi ve Unicode metin kayıtta tek parça korunur", { skip: browserName !== "chromium" }, async () => {
+  await page.locator("#live-root .tiptap").click();
+  await page.evaluate(() => window.__karacaTest.rich.editor.commands.setTextSelection(1));
+  const session = await page.context().newCDPSession(page);
+  await session.send("Input.imeSetComposition", { text: "にほん", selectionStart: 3, selectionEnd: 3 });
+  await session.send("Input.insertText", { text: "日本語" });
+  await session.send("Input.insertText", { text: " 中文 한글 Türkçe ğışüöç" });
+  await page.waitForFunction(() => window.__karacaTest.sync.text.includes("日本語 中文 한글 Türkçe ğışüöç"));
+  const text = await page.evaluate(() => window.__karacaTest.sync.text);
+  assert.equal((text.match(/日本語/g) || []).length, 1);
+  assert.ok(!text.includes("にほん"));
+});
+
+
+test("Unicode yazım farklı tarayıcılarda kaydedilir", async () => {
+  await page.locator("#live-root .tiptap").click();
+  await page.keyboard.insertText("日本語 中文 한글 Türkçe ğışüöç");
+  await page.waitForFunction(() => window.__karacaTest.sync.text.includes("日本語 中文 한글 Türkçe ğışüöç"));
 });
