@@ -23,8 +23,8 @@ Bu paragrafta **kalın metin**, *italik metin*, ***kalın ve italik metin***, ~~
 > Bu tek satırlık standart bir alıntıdır.
 > 
 > İkinci paragrafı içeren çok satırlı alıntı bloğu.
-> 
-> > İç içe (nested) alıntı bloğu örneği.
+
+> İç içe (nested) alıntı bloğu örneği.
 
 * * *
 
@@ -41,7 +41,6 @@ Bu paragrafta **kalın metin**, *italik metin*, ***kalın ve italik metin***, ~~
     -   Deveci armudu
         
 -   Muz
-    
 
 ### Sıralı Liste (Ordered List)
 
@@ -50,15 +49,12 @@ Bu paragrafta **kalın metin**, *italik metin*, ***kalın ve italik metin***, ~~
 2.  Bağımlılıkları yükle (`npm install`)
     
 3.  Uygulamayı ayağa kaldır (`npm run dev`)
-    
 
 ### Görev Listesi (Task List)
 
 - [ ] Markdown ayrıştırıcısı yazıldı
 - [ ] Kod renklendirme (syntax highlighting) eklendi
 - [ ] VS Code eklentisi yayınlandı
-
-* * *
 
 ## 4\. Tablolar (Tables)
 
@@ -79,3 +75,5 @@ Bu paragrafta **kalın metin**, *italik metin*, ***kalın ve italik metin***, ~~
     }
 }
 ```
+
+<p></p>

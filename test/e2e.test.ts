@@ -52,11 +52,17 @@ beforeEach(async () => {
 afterEach(() => { app.rich.destroy(); app.source.view.destroy(); win.close(); });
 
 describe("belge motoru: tek yüzey", () => {
+  it("tek paragraf düzenlenince diğer Markdown yazımları ve referanslar aynen kalır", () => {
+    const original = "Başlık\n======\n\n*   bir\n*   iki\n\nDeğiştir.\n\n[bağ][ref]\n\n[ref]: https://example.com \"başlık\"\n";
+    load(original); select("Değiştir"); type("Yeni"); app.rich.flush();
+    assert.equal(app.sync.text, original.replace("Değiştir", "Yeni"));
+    button("undo").click(); app.rich.flush(); assert.equal(app.sync.text, original);
+  });
   it("tek düzenleme yüzeyi, blok editörü ve textarea yok", () => {
     assert.equal(root().querySelectorAll('[contenteditable="true"]').length, 1);
     assert.equal(root().querySelectorAll(".block, textarea, .tablebar").length, 0);
     assert.equal(root().querySelector("h1").textContent, "Başlık");
-    assert.equal(doc.querySelector("#pkgmark").textContent, "paket-9");
+    assert.equal(doc.querySelector("#pkgmark").textContent, "paket-12");
   });
   it("odak kaybı kaynağı normalize etmez", async () => {
     load("Başlık\n======\n\n*   madde\n\n");
@@ -75,7 +81,7 @@ describe("belge motoru: tek yüzey", () => {
     assert.equal(root().querySelector("strong").textContent, "Giriş");
     assert.equal(button("bold").getAttribute("aria-pressed"), "true");
     button("bold").click(); assert.equal(root().querySelector("strong"), null);
-    await pause(); assert.ok(edits().length);
+    await pause(); assert.equal(app.sync.text, SAMPLE);
   });
   it("seçimsiz kalın komutu yer tutucu yazmaz, sonraki metni biçimler", () => {
     app.rich.editor.commands.setTextSelection(paragraphPosition("Giriş"));
@@ -121,8 +127,28 @@ describe("belge motoru: tek yüzey", () => {
     button("undo").click(); assert.equal(root().querySelectorAll("tr").length, 2);
   });
   it("tablo ekleme seçili metnin konumunda gerçekleşir", () => {
-    select("Giriş"); button("table-menu").click(); doc.querySelector(".kmenu button").click();
+    select("Giriş"); button("table-menu").click(); doc.querySelector('.table-picker button[type="submit"]').click();
     assert.equal(root().querySelectorAll("table").length, 2);
+  });
+  it("tablo boyutunu ızgaradan seçer, seçimin konumunda ekler ve geri alır", () => {
+    select("Giriş"); button("table-menu").click();
+    doc.querySelector('.table-grid [aria-label="4 sütun, 5 satır"]').click();
+    const added = root().querySelectorAll("table")[0];
+    assert.equal(added.querySelectorAll("tr").length, 5);
+    assert.equal(added.querySelectorAll("th").length, 4);
+    assert.equal(doc.querySelector(".table-picker"), null);
+    button("undo").click(); assert.equal(root().querySelectorAll("table").length, 1);
+  });
+  it("kaynak modunda özel boyutlu tablo seçili metni tabloyla değiştirir", () => {
+    app.setMode("source");
+    app.source.view.dispatch({ selection: { anchor: 0, head: 8 } });
+    button("table-menu").click();
+    doc.querySelector('.table-picker [name="cols"]').value = "3";
+    doc.querySelector('.table-picker [name="rows"]').value = "4";
+    doc.querySelector('.table-picker button[type="submit"]').click();
+    const text = app.source.view.state.doc.toString();
+    assert.match(text, /\| Başlık 1 \| Başlık 2 \| Başlık 3 \|/);
+    assert.equal(text.split("\n").filter((line: string) => line.startsWith("| ")).length, 8);
   });
   it("bağlantı diyaloğu seçimi geri kurar", async () => {
     select("Giriş"); button("link").click();

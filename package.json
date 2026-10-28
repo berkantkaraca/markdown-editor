@@ -2,7 +2,7 @@
   "name": "karaca-md-editor",
   "displayName": "Karaca MD",
   "description": "Word benzeri tek yüzeyli WYSIWYG Markdown editörü. Kaynak, canlı, split ve okuma modları.",
-  "version": "0.1.9",
+  "version": "0.1.12",
   "publisher": "vibecode",
   "license": "MIT",
   "repository": {

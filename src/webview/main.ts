@@ -1,7 +1,7 @@
 import codeTheme from "./code-theme.css";
 import { DocumentEditor } from "./document-editor";
 import { SourceEditor } from "./source-editor";
-import { DocumentSync } from "./document-sync";
+import { DocumentSync, type LocalDraft } from "./document-sync";
 import { renderPreview, runMermaid, refreshDiagrams } from "./preview";
 import { attachFormatbar } from "./format";
 import { attachFindbar } from "./search";
@@ -10,7 +10,7 @@ import { parseHeadings } from "../shared/md-utils";
 
 declare function acquireVsCodeApi(): {
   postMessage(message: unknown): void;
-  getState(): { mode?: Mode; recoveryDraft?: string } | undefined;
+  getState(): { mode?: Mode; recoveryDraft?: string; draft?: LocalDraft } | undefined;
   setState(state: unknown): void;
 };
 type Mode = "live" | "source" | "split" | "reading";
@@ -20,6 +20,8 @@ const $ = (id: string) => document.getElementById(id)!;
 const validMode = (value: unknown): value is Mode => ["live", "source", "split", "reading"].includes(String(value));
 let mode: Mode = validMode(vscode.getState()?.mode) ? vscode.getState()!.mode! : "live";
 let configured = false;
+let saveAfterComposition = false;
+const compositionMessages: any[] = [];
 let wrap = true, numbers = true;
 let syncingScroll = false;
 let previewTimer: ReturnType<typeof setTimeout>;
@@ -41,8 +43,16 @@ const sync = new DocumentSync({
     toolbar?.refreshBar();
   },
   status: (dirty) => { $("dirty").textContent = dirty ? "●" : ""; },
+  draftChanged: (draft) => {
+    vscode.setState({ ...vscode.getState(), draft: draft || undefined });
+    post(draft ? { type: "draft", draft } : { type: "draft-clear", expectedText: sync.text });
+  },
+  stateChanged: (state) => {
+    $("sync-alert").classList.toggle("hidden", state !== "blocked" && state !== "retrying");
+    $("sync-message").textContent = state === "blocked" ? "Kayıt tamamlanamadı. Taslağınız korundu." : "Kaydı yeniden deniyoruz…";
+    $("sync-retry").classList.toggle("hidden", state !== "blocked");
+  },
   recover: (draft) => {
-    vscode.setState({ ...vscode.getState(), recoveryDraft: draft });
     showRecovery(draft);
     post({ type: "error", message: "Dış değişiklikle çakışan yerel taslak korundu. Üstteki Taslağı geri yükle düğmesiyle açabilirsiniz." });
   },
@@ -172,14 +182,24 @@ function saveImage(file: File, target: "live" | "source"): void {
 }
 function showRecovery(draft: string): void {
   $("recovery-draft")?.remove();
-  const button = document.createElement("button");
-  button.id = "recovery-draft"; button.type = "button"; button.textContent = "Taslağı geri yükle";
-  button.addEventListener("click", () => {
-    setMode("live"); rich.replaceMarkdown(draft);
-    vscode.setState({ ...vscode.getState(), recoveryDraft: undefined }); button.remove();
-  });
-  $("formatbar").appendChild(button);
+  vscode.setState({ ...vscode.getState(), recoveryDraft: draft });
+  const notice = document.createElement("div"); notice.id = "recovery-draft"; notice.className = "document-notice";
+  notice.setAttribute("role", "status");
+  const label = document.createElement("span"); label.textContent = "Kaydedilmemiş bir taslak bulundu.";
+  const restore = document.createElement("button"); restore.type = "button"; restore.textContent = "Taslağı geri yükle";
+  const dismiss = document.createElement("button"); dismiss.type = "button"; dismiss.textContent = "Taslağı sil";
+  restore.onclick = () => {
+    setMode("live"); rich.replaceMarkdown(draft); rich.flush();
+    vscode.setState({ ...vscode.getState(), recoveryDraft: undefined }); notice.remove();
+  };
+  dismiss.onclick = () => {
+    const state = vscode.getState();
+    vscode.setState({ ...state, recoveryDraft: undefined, draft: state?.draft?.text === draft ? undefined : state?.draft });
+    post({ type: "draft-clear", expectedText: draft }); notice.remove();
+  };
+  notice.append(label, restore, dismiss); $("formatbar").insertAdjacentElement("afterend", notice);
 }
+$("sync-retry").addEventListener("click", () => { rich.flush(); sync.retry(); });
 function reveal(line: number): void {
   if (mode === "source" || mode === "split") {
     const doc = source.view.state.doc, target = doc.line(Math.min(doc.lines, line + 1));
@@ -215,7 +235,7 @@ $("split-preview").addEventListener("scroll", () => scrollTogether($("split-prev
 
 document.addEventListener("keydown", (event) => {
   if (!(event.ctrlKey || event.metaKey)) return;
-  if (event.key.toLowerCase() === "s") { event.preventDefault(); rich.flush(); sync.save(); }
+  if (event.key.toLowerCase() === "s") { event.preventDefault(); if (rich.flush()) sync.save(); else saveAfterComposition = true; }
   if (event.key.toLowerCase() === "f" && !event.defaultPrevented && mode !== "source" && !(mode === "split" && source.view.hasFocus)) {
     event.preventDefault(); find?.openFind();
   }
@@ -224,14 +244,25 @@ window.addEventListener("blur", () => { rich.flush(); sync.flush(); });
 window.addEventListener("message", (event) => {
   const message = event.data;
   if (!message || (message.proto !== undefined && message.proto !== PROTO)) return;
+  if (["update", "edit-result", "save-result"].includes(message.type) && rich.composing) { compositionMessages.push(message); return; }
+  if (typeof message.session === "string" && message.session !== sync.session) return;
   if (message.type === "update" && typeof message.text === "string" && typeof message.version === "number") {
     rich.flush();
     sync.receive(message);
     resolveImages(liveRoot); void runMermaid(liveRoot);
+    if (vscode.getState()?.recoveryDraft === sync.text) {
+      $("recovery-draft")?.remove(); vscode.setState({ ...vscode.getState(), recoveryDraft: undefined });
+    }
   } else if (message.type === "edit-result") {
     rich.flush();
     sync.acknowledge(message.requestId, message, !!message.conflict);
     resolveImages(liveRoot);
+  } else if (message.type === "save-result") {
+    rich.flush(); sync.saved(message.requestId, message, !!message.success);
+  } else if (message.type === "draft-state") {
+    const draft = message.draft as LocalDraft | null;
+    const local = vscode.getState()?.draft;
+    if (draft && typeof draft.text === "string" && draft.text !== sync.text && (!local || draft.updatedAt >= local.updatedAt)) showRecovery(draft.text);
   } else if (message.type === "config") {
     wrap = message.wordWrap !== false; numbers = message.lineNumbers !== false; theme();
     if (!configured) { setMode(vscode.getState()?.mode || (validMode(message.defaultMode) ? message.defaultMode : "live")); configured = true; }
@@ -250,9 +281,18 @@ window.addEventListener("message", (event) => {
   } else if (message.type === "reveal-line") reveal(Math.max(0, Number(message.line) || 0));
 });
 new MutationObserver(theme).observe(document.body, { attributes: true, attributeFilter: ["class"] });
-window.addEventListener("pagehide", () => { rich.flush(); sync.flush(); rich.destroy(); source.view.destroy(); });
+liveRoot.addEventListener("compositionend", () => {
+  const drain = () => {
+    if (rich.composing) { setTimeout(drain, 25); return; }
+    rich.flush();
+    for (const message of compositionMessages.splice(0)) window.dispatchEvent(new MessageEvent("message", { data: message }));
+    if (saveAfterComposition) { saveAfterComposition = false; sync.save(); }
+  };
+  setTimeout(drain, 0);
+});
+window.addEventListener("pagehide", () => { rich.flush(); sync.flush(); sync.dispose(); rich.destroy(); source.view.destroy(); });
 theme(); setMode(mode);
-const recovery = vscode.getState()?.recoveryDraft;
+const recovery = vscode.getState()?.recoveryDraft ?? vscode.getState()?.draft?.text;
 if (recovery) showRecovery(recovery);
 post({ type: "ready" });
 

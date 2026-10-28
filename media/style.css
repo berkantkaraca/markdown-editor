@@ -40,6 +40,25 @@ body {
 .kmenu { position: absolute; z-index: 50; display: flex; flex-direction: column; min-width: 140px; background: var(--vscode-editorWidget-background, #252526); border: 1px solid var(--md-border); border-radius: 6px; padding: 4px; box-shadow: 0 4px 14px rgba(0,0,0,.35); }
 .kmenu button { border: 0; background: transparent; color: inherit; text-align: left; padding: 5px 10px; border-radius: 4px; cursor: pointer; font-size: 12.5px; }
 .kmenu button:hover { background: var(--vscode-list-hoverBackground, var(--md-hover)); }
+.table-picker { position: fixed; z-index: 60; width: min(280px, calc(100vw - 16px)); max-height: calc(100vh - 16px); overflow: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px; border: 1px solid var(--md-border); border-radius: 12px; background: var(--vscode-editorWidget-background, #252526); box-shadow: 0 12px 36px #0005; }
+.table-picker strong { font-size: 14px; }
+.table-size { color: var(--md-accent); font-variant-numeric: tabular-nums; }
+.table-grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 4px; }
+.table-grid button { aspect-ratio: 1; padding: 0; border: 1px solid var(--md-border); border-radius: 3px; background: var(--md-hover); cursor: pointer; }
+.table-grid button.selected { background: color-mix(in srgb, var(--md-accent) 30%, transparent); border-color: var(--md-accent); }
+.table-grid button:focus-visible { outline: 2px solid var(--vscode-focusBorder, var(--md-accent)); outline-offset: 1px; }
+.table-dimensions { display: flex; gap: 12px; }
+.table-field { flex: 1; min-width: 0; }
+.table-field label { display: block; margin-bottom: 6px; }
+.table-stepper { display: flex; height: 36px; border: 1px solid var(--md-border); border-radius: 7px; overflow: hidden; background: var(--vscode-input-background, transparent); }
+.table-stepper:focus-within { border-color: var(--vscode-focusBorder, var(--md-accent)); }
+.table-stepper input { width: 0; min-width: 0; flex: 1; padding: 0 2px; border: 0; outline: none; text-align: center; font: inherit; font-variant-numeric: tabular-nums; color: var(--vscode-input-foreground, inherit); background: transparent; appearance: textfield; -moz-appearance: textfield; }
+.table-stepper input::-webkit-inner-spin-button, .table-stepper input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+.table-stepper button { width: 32px; flex-shrink: 0; border: 0; padding: 0; font-size: 20px; line-height: 1; cursor: pointer; color: inherit; background: var(--md-hover); }
+.table-stepper button:hover:not(:disabled) { background: var(--vscode-list-hoverBackground, var(--md-hover)); color: var(--md-accent); }
+.table-stepper button:disabled { opacity: .3; cursor: default; }
+.table-stepper button:focus-visible { outline: 2px solid var(--vscode-focusBorder, var(--md-accent)); outline-offset: -3px; }
+.table-picker small { color: var(--vscode-descriptionForeground, #999); line-height: 1.5; }
 /* Popover diyalog (bağlantı / görsel) */
 .kdialog { position: fixed; top: 12%; left: 50%; transform: translateX(-50%); z-index: 60; display: flex; flex-direction: column; gap: 8px; min-width: 300px; background: var(--vscode-editorWidget-background, #252526); border: 1px solid var(--md-border); border-radius: 8px; padding: 12px; box-shadow: 0 8px 24px rgba(0,0,0,.4); }
 .kdialog-title { font-weight: 600; font-size: 13px; }
@@ -199,10 +218,6 @@ mark.find-hit.current { background: var(--vscode-editor-findMatchHighlightBackgr
 /* One continuous ProseMirror document; no per-paragraph controls or containers. */
 #live-root .tiptap { outline: none; min-height: 65vh; white-space: pre-wrap; overflow-wrap: break-word; }
 #live-root .tiptap > :first-child { margin-top: 0; }
-#live-root .tiptap p:only-child:has(> br.ProseMirror-trailingBreak:only-child)::before {
-  content: "Yazmaya başlayın…"; color: var(--vscode-descriptionForeground); float: left;
-  height: 0; pointer-events: none;
-}
  .md-body pre { white-space: pre; }
 .md-body pre code { background: transparent; padding: 0; }
 .md-body li > p { margin: 0; }
@@ -271,3 +286,8 @@ mark.find-hit.current { background: var(--vscode-editor-findMatchHighlightBackgr
 .source-dialog textarea:focus { outline: 1px solid var(--md-accent); }
 .source-preview-label { font-size: 12px; color: var(--vscode-descriptionForeground); }
 .source-preview.md-body { width: 100%; max-height: 240px; overflow: auto; margin: 0; padding: 12px; border: 1px solid var(--md-border); border-radius: 7px; }
+
+.document-notice { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; padding: 8px 14px; background: var(--vscode-editorWidget-background, var(--md-hover)); border-bottom: 1px solid var(--md-border); font-size: 12px; }
+.document-notice span { flex: 1; }
+.document-notice button { border: 1px solid var(--md-border); border-radius: 6px; padding: 5px 10px; background: transparent; color: inherit; cursor: pointer; }
+.document-notice button:hover { background: var(--md-hover); }

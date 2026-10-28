@@ -34,7 +34,7 @@ test("VS Code Extension Host: aç, düzenle, kaydet ve yeniden aç", { timeout: 
     assert.ok(fs.existsSync(path.join(channel, "ready")), "Extension Host test runner başlatılmalı");
     let frame = await editorFrame();
     await frame.locator("#live-root h1").waitFor();
-    assert.equal(await frame.locator("#pkgmark").innerText(), "paket-9");
+    assert.equal(await frame.locator("#pkgmark").innerText(), "paket-12");
     await frame.locator("#live-root .tiptap").click();
     await window.keyboard.press("Control+End");
     await window.keyboard.press("Enter");
@@ -48,7 +48,7 @@ test("VS Code Extension Host: aç, düzenle, kaydet ve yeniden aç", { timeout: 
     frame = await editorFrame();
     await frame.waitForFunction(() => document.querySelector("#live-root")?.textContent.includes("Extension Host kaydı başarılı"));
     assert.match(await frame.locator("#live-root").innerText(), /Extension Host kaydı başarılı/);
-    await window.screenshot({ path: path.join(directory, "roundtrip-paket-9.png") });
+    await window.screenshot({ path: path.join(directory, "roundtrip-paket-12.png") });
 
   } catch (error) {
     const window = await app.firstWindow();

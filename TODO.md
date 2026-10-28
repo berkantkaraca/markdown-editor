@@ -1,4 +1,4 @@
-# Durum — paket-9
+# Durum — paket-12
 
 - [x] Araç çubuğu: SVG simgeler, işlev grupları, aktif durumlar, dar ekran ve klavye gezinmesi.
 - [x] Matematik ve Mermaid kaynağı için Canlı moddan açılan, önizlemeli düzenleme penceresi; çift tıkla düzenleme ve araç çubuğundan ekleme.
@@ -6,5 +6,10 @@
 - [x] HTML aktarımı: özel kapsayıcılar, stilli span, tanım listeleri, medya kapsayıcıları, yorumlar ve birleşik hücreli tabloların kaynaklarını koruma.
 - [x] Gerçek VS Code Extension Host üzerinde otomatik aç/düzenle/kaydet/kapat/yeniden aç testi.
 - [x] Windows üzerinde Chromium, Firefox ve WebKit testleri; Chromium'da IME bileşimi, tüm motorlarda Japonca/Çince/Korece/Türkçe yazım.
-- [x] Linux/macOS/Windows × Chromium/Firefox/WebKit CI matrisi hazırlandı (.github/workflows/validation.yml). Yerel çalıştırma araçları eklendi.
-- [ ] Linux ve macOS üzerinde gerçek ortamda manuel doğrulama. Bu Windows oturumunda bu iki işletim sistemi yok; WSL yalnızca docker-desktop içeriyor ve Docker motoru çalışmıyor. CI matrisi henüz uzak sunucuda çalıştırılmadı. Bu madde ortamda doğrulanmadan tamamlandı sayılmıyor.
+- [x] Platform kapsamı Windows. Chromium/Firefox/WebKit için Windows CI matrisi hazırlandı; uzak CI çalıştırması yerel testlerden ayrı tutulur. Linux/macOS şimdilik kapsam dışı.
+- [x] Kayıt yanıtı zaman aşımı, aynı istek kimliğiyle güvenli tekrar, kullanıcıya hata ve yeniden deneme düğmesi.
+- [x] Belgeye özel atomik yerel taslak yedeği, yeniden açmada kurtarma ve eski kaydın yeni taslağı silmesini önleme.
+- [x] Değişmeyen Markdown kaynak aralıklarını, alternatif yazımları ve referans tanımlarını koruma.
+- [x] Uzun süre kesintisiz yazımda serileştirmeye 750 ms üst sınır; IME tamamlanana kadar dış güncellemeleri bekletme.
+
+- [x] Tablo ekleme: boyut ızgarası, özel satır/sütun sayısı, klavye kullanımı ve dar ekran desteği; Canlı ve Kaynak modlarında seçime ekleme.

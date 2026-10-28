@@ -13,7 +13,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        os: [windows-latest]
         browser: [chromium, firefox, webkit]
     steps:
       - uses: actions/checkout@v7

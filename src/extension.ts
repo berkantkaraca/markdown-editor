@@ -1,3 +1,5 @@
+import { RequestQueue } from "./host/request-queue";
+import { DraftStore } from "./host/draft-store";
 import { normalizeNewlines } from "./shared/md-utils";
 import editorLayout from "./webview/layout.html";
 import * as vscode from "vscode";
@@ -274,7 +276,10 @@ class KaracaMarkdownProvider implements vscode.CustomTextEditorProvider {
   // Sürüm tarihçesi (çakışan yazımlarda üç-yönlü birleştirme için uri -> version -> metin)
   private readonly docVersions = new Map<string, Map<number, string>>();
 
-  constructor(private readonly context: vscode.ExtensionContext) {}
+  private readonly drafts: DraftStore;
+  constructor(private readonly context: vscode.ExtensionContext) {
+    this.drafts = new DraftStore(path.join(context.globalStorageUri.fsPath, "drafts"));
+  }
 
   private recordVersion(uri: vscode.Uri, version: number, text: string): void {
     const key = uri.toString();
@@ -337,6 +342,15 @@ class KaracaMarkdownProvider implements vscode.CustomTextEditorProvider {
     this.panels.set(document.uri.toString(), webviewPanel);
     this.recordVersion(document.uri, document.version, document.getText());
 
+    const requests = new RequestQueue();
+    const draftKey = document.uri.toString();
+    let draftWarningShown = false;
+    const draftError = () => {
+      if (draftWarningShown) return;
+      draftWarningShown = true;
+      void vscode.window.showWarningMessage("Yerel taslak yedeği yazılamadı. Belgeyi Ctrl+S ile kaydedin.");
+    };
+    const snapshot = () => ({ text: document.getText(), version: document.version, isDirty: document.isDirty });
     const updateWebview = () => {
       webviewPanel.webview.postMessage({
         proto: PROTO,
@@ -365,7 +379,9 @@ class KaracaMarkdownProvider implements vscode.CustomTextEditorProvider {
       }
     });
     const saveSub = vscode.workspace.onDidSaveTextDocument((saved) => {
-      if (saved.uri.toString() === document.uri.toString()) updateWebview();
+      if (saved.uri.toString() === document.uri.toString()) {
+        updateWebview(); void this.drafts.clear(draftKey, saved.getText()).catch(draftError);
+      }
     });
     const configSub = vscode.workspace.onDidChangeConfiguration((e) => {
       if (e.affectsConfiguration("karacaMd")) {
@@ -390,26 +406,39 @@ class KaracaMarkdownProvider implements vscode.CustomTextEditorProvider {
         case "ready": {
           postConfig();
           updateWebview();
+          const draft = await this.drafts.read(draftKey);
+          if (draft && !document.isDirty && normalizeNewlines(draft.text) === normalizeNewlines(document.getText())) {
+            await this.drafts.clear(draftKey, document.getText()).catch(draftError);
+          } else webviewPanel.webview.postMessage({ proto: PROTO, type: "draft-state", draft });
           break;
         }
-        case "edit": {
-          if (typeof msg.text !== "string" || typeof msg.requestId !== "number") break;
-          const current = normalizeNewlines(document.getText());
-          const baseText = msg.base === document.version ? current : this.getVersionText(document.uri, msg.base);
-          const merged = msg.text === current ? current : baseText === undefined ? null : mergeTexts(normalizeNewlines(baseText), current, normalizeNewlines(msg.text));
-          let conflict = merged === null;
-          if (merged !== null && merged !== current) {
-            try { conflict = !(await this.applyText(document, merged)); }
-            catch { conflict = true; }
+        case "draft": {
+          const draft = msg.draft;
+          if (draft && typeof draft.text === "string" && typeof draft.baseText === "string" && Number.isFinite(draft.updatedAt)) {
+            await this.drafts.write(draftKey, { text: draft.text, baseText: draft.baseText, baseVersion: Number(draft.baseVersion), updatedAt: draft.updatedAt }).catch(draftError);
           }
-          webviewPanel.webview.postMessage({
-            proto: PROTO, type: "edit-result", requestId: msg.requestId,
-            text: document.getText(), version: document.version, isDirty: document.isDirty, conflict,
-          });
           break;
         }
+        case "draft-clear": {
+          if (typeof msg.expectedText === "string") await this.drafts.clear(draftKey, msg.expectedText).catch(draftError);
+          break;
+        }
+        case "edit":
         case "save": {
-          await document.save();
+          if (typeof msg.text !== "string" || typeof msg.requestId !== "number" || typeof msg.session !== "string") break;
+          const result = await requests.execute(msg, async () => {
+            if (msg.type === "save") { const success = await document.save(); return { ...snapshot(), success }; }
+            const current = normalizeNewlines(document.getText());
+            const baseText = msg.base === document.version ? current : this.getVersionText(document.uri, msg.base);
+            const merged = normalizeNewlines(msg.text) === current ? current : baseText === undefined ? null : mergeTexts(normalizeNewlines(baseText), current, normalizeNewlines(msg.text));
+            let conflict = merged === null;
+            if (merged !== null && merged !== current) conflict = !(await this.applyText(document, merged));
+            return { ...snapshot(), conflict };
+          }, snapshot);
+          // Read dirty state after save resolves; no cached pre-save snapshot.
+          const reply = msg.type === "save" && result.success ? { ...result, ...snapshot() } : result;
+          webviewPanel.webview.postMessage({ proto: PROTO, type: msg.type === "save" ? "save-result" : "edit-result",
+            requestId: msg.requestId, session: msg.session, ...reply });
           break;
         }
         case "open-link": {

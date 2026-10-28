@@ -2,6 +2,7 @@ import type { Editor } from "@tiptap/core";
 import type { EditorView } from "@codemirror/view";
 import { editTable, setHeadingLevel, togglePrefix, toggleTaskLine } from "../shared/md-utils";
 import type { TableOp } from "../shared/md-utils";
+import { createTablePicker } from "./table-picker";
 
 interface FormatDeps {
   getMode(): string;
@@ -126,6 +127,30 @@ export function attachFormatbar(deps: FormatDeps) {
     document.body.appendChild(popup); fields[1].focus(); fields[1].select();
   }
 
+  function pickTable(anchor: HTMLElement) {
+    close();
+    const targetLive = live();
+    const bookmark = targetLive ? editor().state.selection.getBookmark() : null;
+    const range = targetLive ? null : source().state.selection.main;
+    popup = createTablePicker(anchor, (rows, cols) => {
+      close();
+      if (bookmark) {
+        editor().view.dispatch(editor().state.tr.setSelection(bookmark.resolve(editor().state.doc)));
+        editor().chain().focus().insertTable({ rows, cols, withHeaderRow: true }).run();
+      } else if (range) {
+        const view = source();
+        const header = `| ${Array.from({ length: cols }, (_, i) => `Başlık ${i + 1}`).join(" | ")} |`;
+        const divider = `| ${Array(cols).fill("---").join(" | ")} |`;
+        const body = Array(rows - 1).fill(`| ${Array(cols).fill("").join(" | ")} |`);
+        const snippet = "\n\n" + [header, divider, ...body].join("\n") + "\n\n";
+        view.dispatch({ changes: { from: range.from, to: range.to, insert: snippet }, selection: { anchor: range.from + 4 } });
+        view.focus();
+      }
+      refreshBar();
+    }, close);
+    document.body.appendChild(popup); popup.querySelector<HTMLElement>('[tabindex="0"]')?.focus();
+  }
+
   function run(command: string, anchor: HTMLElement) {
     if (command === "undo") return deps.undo();
     if (command === "redo") return deps.redo();
@@ -138,10 +163,9 @@ export function attachFormatbar(deps: FormatDeps) {
       } }]); return;
     }
     if (command === "table-menu") {
-      menu(anchor, [{ label: "Tablo Ekle", run: () => {
-        if (live()) editor().chain().focus().insertTable({ rows: 3, cols: 2, withHeaderRow: true }).run();
-        else insert("\n| Başlık 1 | Başlık 2 |\n| --- | --- |\n|  |  |\n");
-      } }, ...(["add-row", "del-row", "add-col", "del-col"] as TableOp[]).map((operation, i) => ({
+      const inTable = live() ? editor().isActive("table") : source().state.doc.lineAt(source().state.selection.main.head).text.trim().startsWith("|");
+      if (!inTable) { pickTable(anchor); return; }
+      menu(anchor, [{ label: "Yeni tablo…", run: () => { setTimeout(() => pickTable(anchor), 0); } }, ...(["add-row", "del-row", "add-col", "del-col"] as TableOp[]).map((operation, i) => ({
         label: ["+ Satır", "− Satır", "+ Sütun", "− Sütun"][i], run: () => table(operation),
       }))]); return;
     }

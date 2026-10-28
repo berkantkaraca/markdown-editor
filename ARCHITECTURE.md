@@ -1,4 +1,4 @@
-# Karaca MD — paket-9 mimarisi
+# Karaca MD — paket-10 mimarisi
 
 ## Belge modeli
 
@@ -90,7 +90,7 @@ belirtilebilir; Windows'ta Chrome veya Edge otomatik bulunur. Diğer ortamlarda
 Testler üretimdeki `layout.html` dosyasını kullanır. Test kancası yalnızca test
 paketinde etkinleşir. Her teslimde paket göstergesi bir artırılır; kurallar AGENTS.md'dedir.
 
-## paket-9 ekleri
+## paket-10 ekleri
 
 `source-dialog.ts` kaynak düzenleme/önizleme penceresini yönetir. Araç çubuğu svg
 simgeler ve semantik gruplar kullanır; komut hedefleri önceki belge seçimini korur.
@@ -102,4 +102,16 @@ bu nesneler canlıda çift tıklanarak düzenlenebilir. Betikler render'da temiz
 
 Yerel testler Windows, Chromium/Firefox/WebKit, Unicode ve Chromium IME bileşimini kapsar.
 Gerçek VS Code testi ayrı profilde aç/düzenle/kaydet/yeniden aç zincirini çalıştırır.
-Linux/macOS matrisi hazırlanmıştır; o ortamların manuel doğrulaması henüz yapılmadı.
+Platform kapsamı Windows'tur; CI yalnızca windows-latest üzerinde üç motoru çalıştırır.
+
+`SourcePreserver` orijinal Markdown aralıklarını model kökenleriyle eşler; değişmeyen
+aralıklar ve görünmeyen referans tanımları aynen kalır. Yapısal taşıma gibi eşlemenin
+belirsiz olduğu işlemlerde standart serileştirme kullanılır. Köken bağlamı belge
+geçmişine bağlıdır; geri alma önceki kaynağa döner.
+
+`DocumentSync` kayıt yanıtını bekler, zaman aşımında aynı oturum/istek kimliğini
+tekrar gönderir. `RequestQueue` eşzamanlı ve gecikmiş tekrarları tek uygulamaya indirir.
+Başarısız disk kaydı kullanıcıya bildirilir. `DraftStore` belge URI karmasıyla adlandırılan
+JSON yedeğini geçici dosya ve rename ile yazar; eski kayıt yeni taslağı temizleyemez.
+Yedek mesajı her serileştirilmiş değişiklikte gönderilir. Uzun yazımda serileştirme
+750 ms içinde başlatılır; IME bileşimi bitmeden serileştirme/dış güncelleme uygulanmaz.

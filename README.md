@@ -40,23 +40,30 @@ npm run test:browser
 ```
 
 VS Code'da F5 ile Extension Development Host açın; `sample.md` dosyasını açarak
-deneyin. Araç çubuğunda **paket-9** görünmelidir. Kurulu eski eklentiyi kullanıyorsanız
+deneyin. Araç çubuğunda **paket-12** görünmelidir. Kurulu eski eklentiyi kullanıyorsanız
 Extension Development Host içindeki sürümü açtığınızdan emin olun.
 
 Tarayıcı testleri Windows'ta Chrome/Edge'i bulur. Başka bir kurulum için
 `CHROME_PATH` kullanın veya `npx playwright install chromium` çalıştırın.
-Test ekran görüntüsü `out/editor-paket-9.png` dosyasına yazılır.
+Test ekran görüntüsü `out/editor-paket-12.png` dosyasına yazılır.
 
 Ayarlar: `karacaMd.defaultMode` (`live`, `source`, `split`, `reading`),
 `karacaMd.wordWrap`, `karacaMd.lineNumbers`.
 
-Canlı düzenleme eşdeğer Markdown yazımını normalize edebilir. Değiştirilmeyen
+Canlı düzenleme değişen kaynak bölümünün Markdown yazımını normalize edebilir.
+Diğer bölümlerin yazımı, boşlukları ve referans tanımları korunur. Değiştirilmeyen
 belge yalnızca odak veya mod değişti diye yeniden yazılmaz. Desteklenmeyen ham
 HTML/Markdown uzantıları içeren belgeleri Kaynak modunda düzenleyin. Ayrıntılar
 `ARCHITECTURE.md` içindedir.
 
 Enter ile eklenen boş paragraflar, kaydetme ve yeniden açma sırasında korunmak için
 Markdown kaynağında `<p></p>` olarak saklanır.
+
+Şimdilik desteklenen platform Windows'tur. Kayıt yanıtı gelmezse aynı işlem güvenli
+şekilde tekrar denenir; sorun sürerse üst çubuktan yeniden deneyebilirsin. Kaydedilmemiş
+taslaklar VS Code global storage alanında belgeye özel yerel yedekte saklanır. Yeniden
+açılışta **Taslağı geri yükle** veya **Taslağı sil** seçilebilir. Yedek yazımı asenkrondur;
+elektrik kesintisinden hemen önceki son tuşun diske ulaşması garanti edilmez.
 
 ## Ek doğrulama
 
@@ -70,3 +77,5 @@ npm run test:performance
 Extension Host testi ayrı bir profil ve `out/extension-host/roundtrip.md` kullanır;
 açık çalışma belgelerini değiştirmez. `VSCODE_EXECUTABLE` ile VS Code yürütülebilir
 dosyası belirtilebilir. İşletim sistemi doğrulama durumu TODO.md, ölçümler PERFORMANCE.md içindedir.
+
+Tablo düğmesinde 8×6 ızgaradan boyut seçebilir veya 20 sütun / 50 satıra kadar özel boyut girebilirsin. İlk satır başlıktır. Tablo içindeyken aynı düğme satır ve sütun işlemlerini açar. Ok tuşlarıyla boyut seçip Enter ile ekleyebilir, Escape ile vazgeçebilirsin.

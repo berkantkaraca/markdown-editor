@@ -34,22 +34,48 @@ beforeEach(async () => {
   page = await browser.newPage({ viewport: { width: 1280, height: 1000 } });
   page.on("pageerror", (error) => errors.push(error.message));
   await page.addInitScript(({ text }) => {
-    let state = {}, version = 1, documentText = text;
-    window.__posted = [];
+    let state = JSON.parse(sessionStorage.getItem("vscode-state") || "{}"), version = 1, documentText = text;
+    const replies = new Map();
+    window.__posted = []; window.__applyCount = 0; window.__saveCount = 0;
     const send = (message) => window.postMessage({ proto: 1, ...message }, "*");
-    window.acquireVsCodeApi = () => ({ getState: () => state, setState: (next) => { state = next; },
+    window.acquireVsCodeApi = () => ({ getState: () => state, setState: (next) => {
+      state = next; window.__stateForTest = next;
+      if (window.__persistDrafts) sessionStorage.setItem("vscode-state", JSON.stringify(next));
+    },
       postMessage: (message) => {
         window.__posted.push(message);
         if (message.type === "ready") setTimeout(() => {
           send({ type: "config", defaultMode: "live" });
           send({ type: "update", text: documentText, version, isDirty: false });
+          const draft = JSON.parse(sessionStorage.getItem("journal") || "null");
+          send({ type: "draft-state", draft });
         });
-        if (message.type === "edit") setTimeout(() => {
-          documentText = window.__hostCRLF ? message.text.replace(/\r?\n/g, "\r\n") : message.text; version = Math.max(version, message.base) + 1;
-          send({ type: "update", text: documentText, version, isDirty: true });
-          send({ type: "edit-result", requestId: message.requestId, text: documentText, version, isDirty: true });
+        if (message.type === "draft") {
+          window.__journal = message.draft;
+          if (window.__persistDrafts) sessionStorage.setItem("journal", JSON.stringify(message.draft));
+        }
+        if (message.type === "draft-clear" && window.__journal?.text === message.expectedText) {
+          window.__journal = null; sessionStorage.removeItem("journal");
+        }
+        if (message.type === "edit" || message.type === "save") setTimeout(() => {
+          const key = message.session + ":" + message.requestId;
+          let result = replies.get(key);
+          if (!result) {
+            if (message.type === "edit") {
+              documentText = window.__hostCRLF ? message.text.replace(/\r?\n/g, "\r\n") : message.text;
+              version = Math.max(version, message.base) + 1; window.__applyCount++;
+            } else window.__saveCount++;
+            result = { type: message.type === "edit" ? "edit-result" : "save-result", session: message.session, requestId: message.requestId,
+              text: documentText, version, isDirty: message.type === "edit", success: true };
+            replies.set(key, result);
+          }
+          window.__hostText = documentText;
+          if (window.__dropEdits && message.type === "edit" || window.__dropSaves && message.type === "save") return;
+          send({ type: "update", text: result.text, version: result.version, isDirty: result.isDirty });
+          send(result);
         }, 20);
       } });
+
   }, { text: initial });
   await page.goto(address);
   await page.locator("#live-root h1").waitFor();
@@ -99,7 +125,7 @@ test("örnek belge: tek yüzey, gerçek Mermaid render ve belge görünümü", a
   assert.equal(await page.locator("#live-root textarea, #live-root .block, #live-root .tablebar").count(), 0);
   await page.locator("#live-wrap").evaluate((element) => { element.scrollTop = 0; });
   fs.mkdirSync(path.join(__dirname, "../out"), { recursive: true });
-  await page.screenshot({ path: path.join(__dirname, "../out/editor-paket-9.png") });
+  await page.screenshot({ path: path.join(__dirname, "../out/editor-paket-12.png") });
   await page.getByRole("tab", { name: "Okuma", exact: true }).click();
   await page.getByRole("tab", { name: "Canlı", exact: true }).click();
   assert.equal(await page.locator('#live-root [contenteditable="true"]').count(), 1);
@@ -140,9 +166,9 @@ test("canlı ve okuma: çerçevesiz alan ve görev satırları aynı ölçülerd
     }
     assert.ok(Math.abs(live.tasks[i].box.y - live.tasks[i].content.y) < 7, "kutu metinle aynı satırda");
   }
-  await page.screenshot({ path: path.join(__dirname, "../out/reading-paket-9.png") });
+  await page.screenshot({ path: path.join(__dirname, "../out/reading-paket-12.png") });
   await page.getByRole("tab", { name: "Canlı", exact: true }).click();
-  await page.screenshot({ path: path.join(__dirname, "../out/live-paket-9.png") });
+  await page.screenshot({ path: path.join(__dirname, "../out/live-paket-12.png") });
 });
 
 
@@ -197,13 +223,13 @@ test("referans kod paleti Java ve TypeScript için Canlı/Okuma modlarında ayn�
   assert.equal(live.background, "rgb(40, 40, 40)");
   assert.deepEqual(live.tokens, ["rgb(78, 201, 176)", "rgb(78, 201, 176)", "rgb(220, 220, 170)", "rgb(197, 134, 192)", "rgb(206, 145, 120)", "rgb(86, 156, 214)", "rgb(156, 220, 254)"]);
   assert.deepEqual(live.source.map((source) => source.trimEnd()), [java, ts]);
-  await page.screenshot({ path: path.join(__dirname, "../out/code-live-paket-9.png") });
+  await page.screenshot({ path: path.join(__dirname, "../out/code-live-paket-12.png") });
   await page.getByRole("tab", { name: "Okuma", exact: true }).click();
   const reading = await colors("#reading-root");
   assert.deepEqual(reading.tokens, live.tokens);
   assert.equal(reading.background, live.background);
   assert.deepEqual(reading.source.map((source) => source.trimEnd()), [java, ts]);
-  await page.screenshot({ path: path.join(__dirname, "../out/code-reading-paket-9.png") });
+  await page.screenshot({ path: path.join(__dirname, "../out/code-reading-paket-12.png") });
 });
 
 
@@ -269,7 +295,7 @@ test("araç çubuğu dar ekranda erişilebilir ve simgeler etiketlidir", async (
   assert.equal(await page.evaluate(() => document.body.scrollWidth > innerWidth), false);
   await page.getByRole("tab", { name: "Okuma", exact: true }).click();
   await page.getByRole("tab", { name: "Canlı", exact: true }).click();
-  await page.screenshot({ path: path.join(__dirname, "../out/toolbar-mobile-paket-9.png") });
+  await page.screenshot({ path: path.join(__dirname, "../out/toolbar-mobile-paket-12.png") });
 });
 
 test("IME bileşimi ve Unicode metin kayıtta tek parça korunur", { skip: browserName !== "chromium" }, async () => {
@@ -290,4 +316,68 @@ test("Unicode yazım farklı tarayıcılarda kaydedilir", async () => {
   await page.locator("#live-root .tiptap").click();
   await page.keyboard.insertText("日本語 中文 한글 Türkçe ğışüöç");
   await page.waitForFunction(() => window.__karacaTest.sync.text.includes("日本語 中文 한글 Türkçe ğışüöç"));
+});
+
+test("tablo seçici: önizleme, klavye, özel boyut ve dar ekran", async () => {
+  await page.getByRole("button", { name: "Tablo", exact: true }).click();
+  const picker = page.getByRole("dialog", { name: "Tablo ekle", exact: true });
+  await picker.getByRole("button", { name: "Sütun artır", exact: true }).click();
+  assert.equal(await picker.getByRole("spinbutton", { name: "Sütun", exact: true }).inputValue(), "3");
+  await picker.getByRole("button", { name: "Sütun azalt", exact: true }).click();
+  await picker.getByRole("button", { name: "Sütun azalt", exact: true }).click();
+  assert.equal(await picker.getByRole("button", { name: "Sütun azalt", exact: true }).isDisabled(), true);
+  await picker.getByRole("spinbutton", { name: "Sütun", exact: true }).fill("20");
+  assert.equal(await picker.getByRole("button", { name: "Sütun artır", exact: true }).isDisabled(), true);
+  await picker.getByRole("button", { name: "Satır artır", exact: true }).click();
+  assert.equal(await picker.getByRole("spinbutton", { name: "Satır", exact: true }).inputValue(), "4");
+  await picker.getByRole("button", { name: "4 sütun, 5 satır", exact: true }).hover();
+  assert.equal(await picker.locator(".table-size").innerText(), "4 sütun × 5 satır");
+  assert.equal(await picker.locator(".table-grid .selected").count(), 20);
+  await page.setViewportSize({ width: 390, height: 800 });
+  await page.screenshot({ path: path.join(__dirname, "../out/table-picker-paket-12.png") });
+  const box = await picker.boundingBox(); assert.ok(box.x >= 0 && box.x + box.width <= 390);
+  await page.keyboard.press("Escape"); assert.equal(await picker.count(), 0);
+  await page.getByRole("button", { name: "Tablo", exact: true }).click();
+  await page.keyboard.press("ArrowRight"); await page.keyboard.press("Enter");
+  assert.equal(await page.locator("#live-root table tr").count(), 3);
+  assert.equal(await page.locator("#live-root table th").count(), 3);
+  await page.keyboard.press(`${modifier}+z`);
+  await page.getByRole("button", { name: "Tablo", exact: true }).click();
+  await picker.getByRole("spinbutton", { name: "Sütun", exact: true }).fill("9");
+  await picker.getByRole("spinbutton", { name: "Satır", exact: true }).fill("10");
+  await picker.getByRole("button", { name: "Tabloyu ekle", exact: true }).click();
+  assert.equal(await page.locator("#live-root table tr").count(), 10);
+  assert.equal(await page.locator("#live-root table th").count(), 9);
+  const placeholders = await page.locator("#live-root table p").evaluateAll(elements => elements.map(element => getComputedStyle(element, "::before").content));
+  assert.ok(placeholders.every(content => content === "none" || content === "normal" || content === '""'));
+  assert.equal((await page.locator("#live-root table").innerText()).trim(), "");
+});
+
+test("kaybolan kayıt yanıtı tekrarlandığında belge iki kez uygulanmaz", async () => {
+  await page.clock.install();
+  await page.evaluate(() => { window.__dropEdits = true; window.__karacaTest.rich.editor.commands.insertContent("Güvenli taslak "); window.__karacaTest.rich.flush(); window.__karacaTest.sync.flush(); });
+  await page.clock.runFor(22000);
+  assert.equal(await page.locator("#sync-retry").isVisible(), true);
+  assert.equal(await page.evaluate(() => window.__applyCount), 1);
+  const requests = await page.evaluate(() => window.__posted.filter(m => m.type === "edit"));
+  assert.equal(requests.length, 3); assert.ok(requests.every(m => m.requestId === requests[0].requestId));
+  await page.evaluate(() => { window.__dropEdits = false; });
+  await page.locator("#sync-retry").click(); await page.clock.runFor(100);
+  assert.equal(await page.evaluate(() => window.__applyCount), 1);
+  assert.equal(await page.locator("#sync-alert").isVisible(), false);
+  await page.evaluate(() => { window.__dropSaves = true; window.__karacaTest.sync.save(); });
+  await page.clock.runFor(4000);
+  assert.equal(await page.evaluate(() => window.__saveCount), 1);
+  await page.evaluate(() => { window.__dropSaves = false; }); await page.clock.runFor(6500);
+  assert.equal(await page.evaluate(() => window.__saveCount), 1);
+  assert.equal(await page.evaluate(() => window.__stateForTest.draft), undefined);
+});
+
+test("yeniden yüklenen webview kaydedilmemiş taslağı geri getirir", async () => {
+  await page.evaluate(() => { window.__persistDrafts = true; window.__dropEdits = true;
+    window.__karacaTest.rich.editor.commands.insertContent("Kurtarılacak taslak "); window.__karacaTest.rich.flush(); });
+  await page.reload();
+  await page.getByRole("button", { name: "Taslağı geri yükle", exact: true }).click();
+  await page.waitForFunction(() => window.__karacaTest.sync.text.includes("Kurtarılacak taslak"));
+  assert.match(await page.locator("#live-root").innerText(), /Kurtarılacak taslak/);
 });

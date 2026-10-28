@@ -14,7 +14,7 @@ export interface MdPipeline {
   renderFullWithFm(text: string): string;
 }
 
-export function createMarkdown(): InstanceType<typeof MarkdownIt> {
+export function createMarkdown(config: { sourceMap?: boolean } = {}): InstanceType<typeof MarkdownIt> {
   const md = new MarkdownIt({
     html: true,
     linkify: true,
@@ -52,19 +52,47 @@ export function createMarkdown(): InstanceType<typeof MarkdownIt> {
     return true;
   });
 
+  if (config.sourceMap) md.core.ruler.after("block", "source-ranges", (state) => {
+    const offsets = [0];
+    for (let i = 0; i < state.src.length; i++) if (state.src[i] === "\n") offsets.push(i + 1);
+    const base = Number(state.env.sourceOffset || 0);
+    for (const token of state.tokens) {
+      if (token.level !== 0 || !token.map || token.nesting === -1 || token.type === "inline") continue;
+      const from = offsets[token.map[0]] ?? state.src.length;
+      const to = offsets[token.map[1]] ?? state.src.length;
+      token.attrSet("data-md-range", `${base + from}:${base + to}`);
+    }
+  });
+  const annotate = (html: string, range: string | number | null) => range
+    ? html.replace(/^(\s*<[a-z][\w-]*)/i, `$1 data-md-range="${range}"`) : html;
+
   // ```mermaid blokları: kod yerine diyagram kabı üret (çizim runMermaid'de)
   const defaultFence = md.renderer.rules.fence;
   md.renderer.rules.fence = (tokens, idx, options, env, self) => {
     const info = (tokens[idx].info || "").trim().split(/\s+/)[0].toLowerCase();
     if (info === "mermaid") {
       const code = tokens[idx].content;
-      return `<div class="mermaid" data-source="${encodeURIComponent(code)}">${md.utils.escapeHtml(code)}</div>`;
+      return annotate(`<div class="mermaid" data-source="${encodeURIComponent(code)}">${md.utils.escapeHtml(code)}</div>`, tokens[idx].attrGet("data-md-range"));
     }
     if (defaultFence) {
-      return defaultFence(tokens, idx, options, env, self);
+      return annotate(defaultFence(tokens, idx, options, env, self), tokens[idx].attrGet("data-md-range"));
     }
     return self.renderToken(tokens, idx, options);
   };
+  if (config.sourceMap) {
+    for (const rule of ["math_block", "math_block_eqno", "code_block", "html_block"]) {
+      const render = md.renderer.rules[rule];
+      if (!render) continue;
+      md.renderer.rules[rule] = (tokens, index, options, env, self) => {
+        const html = render(tokens, index, options, env, self);
+        const range = tokens[index].attrGet("data-md-range");
+        if (rule === "html_block" && range && /^\s*<!--/.test(html)) {
+          return `<div data-md-range="${range}" data-md-source="${encodeURIComponent(tokens[index].content)}">${html}</div>`;
+        }
+        return annotate(html, range);
+      };
+    }
+  }
   return md;
 }
 
@@ -76,21 +104,23 @@ export function renderBlockHtmlWith(md: InstanceType<typeof MarkdownIt>, source:
   return md.render(source);
 }
 
-export function renderFullWithFmWith(md: InstanceType<typeof MarkdownIt>, text: string): string {
+export function renderFullWithFmWith(md: InstanceType<typeof MarkdownIt>, text: string, sourceMap = false): string {
   const fm = parseFrontmatter(text);
   if (!fm) {
     return md.render(text);
   }
   const rest = text.split("\n").slice(fm.endLine).join("\n");
-  return renderFrontmatterHtml(fm) + md.render(rest);
+    const offset = text.length - rest.length;
+  const frontmatter = sourceMap ? renderFrontmatterHtml(fm).replace("<div ", `<div data-md-range="0:${offset}" `) : renderFrontmatterHtml(fm);
+  return frontmatter + md.render(rest, { sourceOffset: offset });
 }
 
-export function createMdPipeline(): MdPipeline {
-  const md = createMarkdown();
+export function createMdPipeline(config: { sourceMap?: boolean } = {}): MdPipeline {
+  const md = createMarkdown(config);
   return {
     md,
     renderWikilinks: (src) => renderWikilinksWith(md, src),
     renderBlockHtml: (source) => renderBlockHtmlWith(md, source),
-    renderFullWithFm: (text) => renderFullWithFmWith(md, text),
+    renderFullWithFm: (text) => renderFullWithFmWith(md, text, config.sourceMap),
   };
 }

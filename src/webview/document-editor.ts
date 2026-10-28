@@ -1,7 +1,8 @@
+import { SourcePreserver } from "./source-preserver";
 import { openSourceDialog, type SpecialKind } from "./source-dialog";
 import { CodeHighlight } from "./code-highlight";
 import { prepareTaskLists, taskCheckbox } from "./task-lists";
-import { decodeSource } from "../shared/md-utils";
+import { decodeSource, normalizeNewlines } from "../shared/md-utils";
 import { Editor, Extension, Node as TiptapNode } from "@tiptap/core";
 import StarterKit from "@tiptap/starter-kit";
 import { TableKit } from "@tiptap/extension-table";
@@ -17,7 +18,8 @@ import DOMPurify from "dompurify";
 import { createMdPipeline } from "../shared/md-pipeline";
 import { createTurndown } from "../shared/md-turndown";
 
-const pipeline = createMdPipeline();
+const pipeline = createMdPipeline({ sourceMap: true });
+const contentPipeline = createMdPipeline();
 const converter = createTurndown();
 const findKey = new PluginKey<DecorationSet>("documentFind");
 
@@ -85,12 +87,12 @@ const DocumentImage = Image.extend({
   },
 });
 
-function importMarkdown(text: string): string {
+function importMarkdown(text: string, sourceMap = false): string {
   // Parse in an inert document, extract source before sanitization, then sanitize
   // the result. DOMPurify intentionally rejects comment-like attribute values
   // (including Mermaid arrows), so source attributes use URI encoding.
   const host = new DOMParser().parseFromString("<body></body>", "text/html").body;
-  host.innerHTML = pipeline.renderFullWithFm(text);
+  host.innerHTML = (sourceMap ? pipeline : contentPipeline).renderFullWithFm(text);
   host.querySelectorAll(".frontmatter, .mermaid, .katex-display, .katex").forEach((el) => {
     if (!host.contains(el)) return;
     const display = el.matches(".frontmatter, .mermaid, .katex-display");
@@ -103,6 +105,7 @@ function importMarkdown(text: string): string {
     wrapper.appendChild(el.cloneNode(true));
     const equation = el.classList.contains("katex-display") ? el.closest("eqn") : null;
     const target = equation?.parentElement?.tagName === "SECTION" ? equation.parentElement : el;
+    if (target.hasAttribute("data-md-range")) wrapper.setAttribute("data-md-range", target.getAttribute("data-md-range")!);
     target.replaceWith(wrapper);
   });
   // Keep HTML constructs outside the editing schema as source-preserving inline
@@ -111,8 +114,12 @@ function importMarkdown(text: string): string {
     if (!host.contains(el) || el.closest("pre,code,[data-md-source]")) return;
     if (el.tagName === "TABLE" && !el.querySelector("[colspan],[rowspan],[style]") && el.querySelector("tr")?.querySelector("th")) return;
     const wrapper = document.createElement(el.matches("details,summary,article,section,aside,header,footer,nav,figure,figcaption,address,dl,dt,dd,video,audio,picture,div,table") ? "div" : "span");
-    wrapper.dataset.mdSource = encodeURIComponent(el.outerHTML);
-    wrapper.appendChild(el.cloneNode(true)); el.replaceWith(wrapper);
+    const clean = el.cloneNode(true) as HTMLElement;
+    clean.removeAttribute("data-md-range");
+    clean.querySelectorAll("[data-md-range]").forEach((child) => child.removeAttribute("data-md-range"));
+    wrapper.dataset.mdSource = encodeURIComponent(clean.outerHTML);
+    if (el.hasAttribute("data-md-range")) wrapper.setAttribute("data-md-range", el.getAttribute("data-md-range")!);
+    wrapper.appendChild(clean); el.replaceWith(wrapper);
   });
   const comments: Comment[] = [];
   const walker = document.createTreeWalker(host, NodeFilter.SHOW_COMMENT);
@@ -146,7 +153,9 @@ export class DocumentEditor {
   readonly editor: Editor;
   private markdown = "";
   private serialized = new WeakMap<DocumentNode, string>();
+  private provenance = new SourcePreserver();
   private pending = false;
+  private pendingSince = 0;
   private serializeTimer: ReturnType<typeof setTimeout> | undefined;
   private bookmarks = new Map<string, SelectionBookmark>();
   private matches: { from: number; to: number }[] = [];
@@ -162,6 +171,13 @@ export class DocumentEditor {
         TableKit.configure({ table: { resizable: false } }),
         TaskList, TaskItem.configure({ nested: true, HTMLAttributes: { "data-type": "taskItem" } }), DocumentImage,
         preserved(false), preserved(true), CodeHighlight,
+        Extension.create({
+          name: "markdownOrigins",
+          addGlobalAttributes: () => [{ types: ["paragraph", "heading", "bulletList", "orderedList", "taskList", "codeBlock", "blockquote", "table", "image", "preservedSection"], attributes: {
+            markdownRange: { default: null, rendered: false, keepOnSplit: true,
+              parseHTML: (element) => element.closest("[data-md-range]")?.getAttribute("data-md-range") || null },
+          } }],
+        }),
         Extension.create({
           name: "wikiLinks",
           addGlobalAttributes: () => [{ types: ["link"], attributes: {
@@ -203,65 +219,70 @@ export class DocumentEditor {
         },
       },
       onTransaction: ({ transaction }) => {
+        this.provenance.inherit(transaction.before, transaction.doc);
         this.bookmarks.forEach((bookmark, key) => this.bookmarks.set(key, bookmark.map(transaction.mapping)));
       },
       onSelectionUpdate: () => options.selectionChanged(),
       onUpdate: () => {
+        if (!this.pending) this.pendingSince = Date.now();
         this.pending = true;
         clearTimeout(this.serializeTimer);
-        this.serializeTimer = setTimeout(() => this.flush(), 100);
+        this.serializeTimer = setTimeout(() => this.flush(), Math.min(100, Math.max(0, 750 - (Date.now() - this.pendingSince))));
         options.selectionChanged();
         if (this.query) this.find(this.query, this.activeMatch);
       },
     });
   }
 
-  flush(): void {
+  get composing(): boolean { return this.editor.view.composing; }
+  flush(): boolean {
     clearTimeout(this.serializeTimer);
-    if (!this.pending) return;
+    if (!this.pending) return true;
+    if (this.composing) { this.serializeTimer = setTimeout(() => this.flush(), 50); return false; }
     this.pending = false;
     this.markdown = this.serializeDocument();
     this.options.changed(this.markdown);
+    return true;
   }
 
+  private serializeNode(node: DocumentNode): string {
+    let text = this.serialized.get(node);
+    if (text === undefined) {
+      const container = document.createElement("div");
+      container.appendChild(DOMSerializer.fromSchema(this.editor.schema).serializeNode(node));
+      text = converter.turndown(container); this.serialized.set(node, text);
+    }
+    return text;
+  }
   private serializeDocument(): string {
     const doc = this.editor.state.doc;
     if (doc.childCount === 1 && doc.firstChild?.type.name === "paragraph" && doc.firstChild.content.size === 0) return "";
-    const serializer = DOMSerializer.fromSchema(this.editor.schema);
-    const parts: string[] = [];
-    doc.forEach((node) => {
-      let text = this.serialized.get(node);
-      if (text === undefined) {
-        const container = document.createElement("div");
-        container.appendChild(serializer.serializeNode(node));
-        text = converter.turndown(container);
-        this.serialized.set(node, text);
-      }
-      parts.push(text);
-    });
-    return parts.filter((part) => part !== "").join("\n\n");
+    return this.provenance.render(doc, (node) => this.serializeNode(node));
   }
 
   load(markdown: string): void {
+    markdown = normalizeNewlines(markdown);
     this.flush();
     if (markdown === this.markdown) return;
     const { from, to } = this.editor.state.selection;
     this.markdown = markdown;
     // Loading another revision resets native history; undo may never resurrect another revision.
     this.bookmarks.clear();
-    this.editor.commands.setContent(importMarkdown(markdown), { emitUpdate: false });
+    this.editor.commands.setContent(importMarkdown(markdown, true), { emitUpdate: false });
     const loaded = this.editor.state;
     this.editor.view.updateState(EditorState.create({ schema: loaded.schema, doc: loaded.doc, plugins: loaded.plugins }));
     const max = this.editor.state.doc.content.size;
     const doc = this.editor.state.doc;
     this.editor.view.dispatch(this.editor.state.tr.setSelection(TextSelection.between(
       doc.resolve(Math.min(from, max)), doc.resolve(Math.min(to, max)))));
-    this.serializeDocument(); // Prime immutable-node caches once during load.
+    this.provenance.reset(markdown, doc);
     if (this.query) this.find(this.query, this.activeMatch);
   }
 
   replaceMarkdown(markdown: string): void {
-    this.editor.commands.setContent(importMarkdown(markdown));
+    markdown = normalizeNewlines(markdown);
+    this.editor.commands.setContent(importMarkdown(markdown, true));
+    this.provenance.reset(markdown, this.editor.state.doc);
   }
 
   insertSpecial(kind: "math" | "mermaid"): void {
