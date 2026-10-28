@@ -1,3 +1,5 @@
+> Tarihsel inceleme: Bu belge paket-1 mimarisini anlatır. Güncel paket-8 mimarisi için ARCHITECTURE.md dosyasına bakın.
+
 # Karaca MD Editor — Teknik Review
 
 > Tarih: Ekim 2026 · Sürüm: 0.1.0 (`paket-1`) · Durum: Yayına hazır aday

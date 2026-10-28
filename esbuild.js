@@ -17,6 +17,7 @@ const extConfig = {
   format: "cjs",
   platform: "node",
   target: "node18",
+  loader: { ".html": "text" },
   sourcemap: !production,
   minify: production,
 };
@@ -26,6 +27,7 @@ const testBundleConfig = {
   entryPoints: ["src/webview/main.ts"],
   bundle: true,
   outfile: "media/test-bundle.js",
+  define: { __TEST__: "true" },
   format: "iife",
   platform: "browser",
   target: ["es2020"],
@@ -38,6 +40,7 @@ const webviewConfig = {
   entryPoints: ["src/webview/main.ts"],
   bundle: true,
   outdir: "media/webview",
+  define: { __TEST__: "false" },
   format: "esm",
   splitting: true,
   platform: "browser",
@@ -109,10 +112,10 @@ function spawnBuild(part, extraArgs) {
 }
 
 async function run() {
-  copyKatexAssets();
+  if (!only || only === "webview") copyKatexAssets();
   // Eski chunk'lar (dev/prod karışık hash'ler) temizlenir
   try {
-    rmDirSync("media/webview");
+    if (only === "webview") rmDirSync("media/webview");
   } catch {
     /* yoksay */
   }
@@ -150,6 +153,9 @@ async function run() {
     await esbuild.build(webviewConfig);
   }
   if (only === "test-bundle") {
+    const testOutput = path.resolve("dist-test");
+    if (path.dirname(testOutput) !== process.cwd()) throw new Error("Test output must be inside workspace");
+    rmDirSync(testOutput);
     await esbuild.build(testBundleConfig);
   }
   console.log("Build complete.");

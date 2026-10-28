@@ -8,7 +8,7 @@ describe("render hattı", () => {
   it("mermaid fence diyagram kabı üretir", () => {
     const html = pipe.renderBlockHtml("```mermaid\ngraph TD;A-->B;\n```");
     assert.match(html, /div class="mermaid"/);
-    assert.match(html, /data-source="graph TD;A--&gt;B;\n"/);
+    assert.ok(html.includes(`data-source="${encodeURIComponent("graph TD;A-->B;\n")}"`));
   });
   it("js fence highlight'lı pre üretir", () => {
     const html = pipe.renderBlockHtml("```js\nconst a = 1;\n```");
@@ -43,5 +43,19 @@ describe("render hattı", () => {
   });
   it("görev listesi checkbox üretir", () => {
     assert.match(pipe.renderBlockHtml("- [ ] iş"), /checkbox/);
+  });
+});
+
+
+describe("Markdown sözdizimi bütünlüğü", () => {
+  it("kod içindeki wikilink metnine dokunmaz", () => {
+    assert.ok(pipe.renderBlockHtml("`[[Not]]`").includes("<code>[[Not]]</code>"));
+    const html = pipe.renderBlockHtml("```md\n[[Not]]\n```");
+    assert.ok(!html.includes("data-wikilink"));
+    assert.ok(html.includes("[[Not]]"));
+  });
+  it("tırnak ve üç noktayı kendiliğinden değiştirmez", () => {
+    const html = pipe.renderBlockHtml('"Deneme"...');
+    assert.ok(html.includes('&quot;Deneme&quot;...'));
   });
 });

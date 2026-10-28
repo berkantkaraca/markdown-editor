@@ -14,9 +14,9 @@ export function buildFindRegex(query: string, opts: FindOpts): RegExp | null {
   try {
     let src = opts.regex ? query : query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     if (opts.wholeWord) {
-      src = `\\b(?:${src})\\b`;
+      src = `(?<![\\p{L}\\p{N}_])(?:${src})(?![\\p{L}\\p{N}_])`;
     }
-    return new RegExp(src, opts.caseSensitive ? "g" : "gi");
+    return new RegExp(src, opts.caseSensitive ? "gu" : "giu");
   } catch {
     return null; // hatalı ifade
   }
@@ -97,39 +97,6 @@ export function listEnterAction(line: string): ListEnterResult {
   return { kind: "continue", marker: `${indent}${mark}${taskBox} ` };
 }
 
-// Düz paragraf mı? (tablo/liste/başlık/alıntı/kod değilse evet)
-export function isParaLike(t: string): boolean {
-  return !/^\s*(#{1,6}\s+|>\s?|\||`{3,}|~{3,}|\s*[-*+]\s+|\s*\d+[.)]\s+|\s{4,}|\t)/.test(t);
-}
-
-// Silinen satırlar yüzünden komşu paragraflar bitişmesin diye ayraç koru.
-export function joinKeptLines(lines: string[], removed: boolean[]): string {
-  const out: string[] = [];
-  let removedBlankSince = false;
-  for (let i = 0; i < lines.length; i++) {
-    if (removed[i]) {
-      if (lines[i].trim() === "") {
-        removedBlankSince = true;
-      }
-      continue;
-    }
-    const cur = lines[i];
-    if (
-      out.length > 0 &&
-      removedBlankSince &&
-      cur.trim() !== "" &&
-      out[out.length - 1].trim() !== "" &&
-      isParaLike(out[out.length - 1]) &&
-      isParaLike(cur)
-    ) {
-      out.push("");
-    }
-    out.push(cur);
-    removedBlankSince = false;
-  }
-  return out.join("\n");
-}
-
 export function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -175,8 +142,13 @@ export function mergeTexts(base: string, current: string, incoming: string): str
   const b = base.split("\n");
   const hC = diffHunk(b, current.split("\n"));
   const hI = diffHunk(b, incoming.split("\n"));
-  // Aralıklar kesişirse (sınır teması dahil) güvenli birleştirme yok
-  if (hC.start <= hI.end && hI.start <= hC.end) {
+  // Replacements on adjacent lines do not overlap. Insertions at the same
+  // boundary remain ambiguous and must be reported as conflicts.
+  const insertion = hC.start === hC.end || hI.start === hI.end;
+  const overlap = insertion
+    ? hC.start <= hI.end && hI.start <= hC.end
+    : hC.start < hI.end && hI.start < hC.end;
+  if (overlap) {
     return null;
   }
   const out = b.slice();
@@ -219,24 +191,6 @@ export function isTableBlock(source: string): boolean {
     return false;
   }
   return rows[0].trim().startsWith("|") && isSepRow(rows[1]);
-}
-
-// Liste bloğundaki her öğenin satır aralığı (iç içe öğeler düz sırada).
-// Sondaki boş satırlar aralığa dahil edilmez (ayraçlar korunur).
-export function listItemLineSpans(lines: string[]): Array<[number, number]> {
-  const starts: number[] = [];
-  lines.forEach((l, i) => {
-    if (/^\s*(?:[-*+]|\d+[.)])(?:\s+(?:\[[ xX]\]\s+)?|\s*$)/.test(l)) {
-      starts.push(i);
-    }
-  });
-  return starts.map((s, k) => {
-    let e = k + 1 < starts.length ? starts[k + 1] : lines.length;
-    while (e - 1 > s && lines[e - 1].trim() === "") {
-      e--;
-    }
-    return [s, e] as [number, number];
-  });
 }
 
 export type TableOp = "add-row" | "del-row" | "add-col" | "del-col";
@@ -294,7 +248,7 @@ export interface Frontmatter {
 }
 
 export function parseFrontmatter(text: string): Frontmatter | null {
-  const lines = text.split("\n");
+  const lines = text.replace(/\r\n?/g, "\n").split("\n");
   if (lines.length === 0 || lines[0].trim() !== "---") {
     return null;
   }
@@ -335,7 +289,9 @@ export function renderFrontmatterHtml(fm: Frontmatter): string {
         `<span class="fm-val">${escapeHtml(v)}</span></div>`
     )
     .join("");
-  return `<div class="frontmatter">${rows || '<div class="fm-row"><span class="fm-val">boş ön madde</span></div>'}</div>`;
+  const body =
+    rows || '<div class="fm-row"><span class="fm-val">boş ön madde</span></div>';
+  return `<div class="frontmatter" contenteditable="false" data-raw="${escapeHtml(fm.raw)}">${body}</div>`;
 }
 
 // ---------- WikiLink ----------
@@ -435,4 +391,13 @@ export function mimeToExt(mime: string): string | undefined {
     default:
       return undefined;
   }
+}
+
+// Source metadata is URI encoded so sanitizers never interpret Mermaid arrows.
+export function decodeSource(value: string): string {
+  try { return decodeURIComponent(value); } catch { return value; }
+}
+
+export function normalizeNewlines(text: string): string {
+  return text.replace(/\r\n?/g, "\n");
 }

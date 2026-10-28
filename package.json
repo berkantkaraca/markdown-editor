@@ -1,8 +1,8 @@
 {
   "name": "karaca-md-editor",
   "displayName": "Karaca MD",
-  "description": "Tek dosyada markdown düzenleme + görüntüleme: Kaynak / Canlı / Okuma modları. Split preview derdine son.",
-  "version": "0.1.0",
+  "description": "Word benzeri tek yüzeyli WYSIWYG Markdown editörü. Kaynak, canlı, split ve okuma modları.",
+  "version": "0.1.8",
   "publisher": "vibecode",
   "license": "MIT",
   "repository": {
@@ -120,14 +120,17 @@
     "vscode:prepublish": "node esbuild.js --production",
     "lint": "tsc --noEmit",
     "pretest": "node esbuild.js --only=test-bundle",
-    "test": "tsc -p tsconfig.test.json && node --test \"dist-test/test/**/*.test.js\""
+    "test": "tsc -p tsconfig.test.json && node --test \"dist-test/test/**/*.test.js\"",
+    "test:browser": "node esbuild.js --only=test-bundle && node --test test/browser.cjs"
   },
   "devDependencies": {
     "@types/markdown-it": "^14.1.2",
     "@types/node": "^20.11.0",
+    "@types/turndown": "^5.0.6",
     "@types/vscode": "^1.85.0",
     "esbuild": "^0.25.12",
     "jsdom": "^29.1.1",
+    "playwright": "^1.64.1",
     "typescript": "^5.4.5"
   },
   "dependencies": {
@@ -139,11 +142,21 @@
     "@codemirror/state": "^6.4.1",
     "@codemirror/theme-one-dark": "^6.1.2",
     "@codemirror/view": "^6.33.0",
+    "@tiptap/core": "^3.32.0",
+    "@tiptap/extension-image": "^3.32.0",
+    "@tiptap/extension-table": "^3.32.0",
+    "@tiptap/extension-task-item": "^3.32.0",
+    "@tiptap/extension-task-list": "^3.32.0",
+    "@tiptap/pm": "^3.32.0",
+    "@tiptap/starter-kit": "^3.32.0",
+    "dompurify": "^3.4.17",
     "highlight.js": "^11.9.0",
     "katex": "^0.19.0",
-    "markdown-it": "^14.1.0",
+    "markdown-it": "^15.0.3",
     "markdown-it-task-lists": "^2.1.1",
     "markdown-it-texmath": "^1.0.0",
-    "mermaid": "^10.9.5"
+    "mermaid": "^12.2.0",
+    "turndown": "^7.2.4",
+    "turndown-plugin-gfm": "^1.0.2"
   }
 }

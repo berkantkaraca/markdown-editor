@@ -12,3 +12,12 @@ deneme.md
 assets/**
 **/*.map
 .vscodeignore
+out/**
+AGENTS.md
+ARCHITECTURE.md
+TODO.md
+TEKNIK-REVIEW.md
+REFERANS-ANALIZ.md
+.codex/**
+.agents/**
+package-lock.json

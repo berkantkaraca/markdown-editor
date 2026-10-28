@@ -1,3 +1,5 @@
+import { normalizeNewlines } from "./shared/md-utils";
+import editorLayout from "./webview/layout.html";
 import * as vscode from "vscode";
 import * as path from "path";
 import * as crypto from "crypto";
@@ -303,14 +305,14 @@ class KaracaMarkdownProvider implements vscode.CustomTextEditorProvider {
     return this.docVersions.get(uri.toString())?.get(version);
   }
 
-  private async applyText(document: vscode.TextDocument, text: string): Promise<void> {
+  private async applyText(document: vscode.TextDocument, text: string): Promise<boolean> {
     const fullRange = new vscode.Range(
       document.positionAt(0),
       document.positionAt(document.getText().length)
     );
     const edit = new vscode.WorkspaceEdit();
     edit.replace(document.uri, fullRange, text);
-    await vscode.workspace.applyEdit(edit);
+    return await vscode.workspace.applyEdit(edit);
   }
 
   async resolveCustomTextEditor(
@@ -362,6 +364,9 @@ class KaracaMarkdownProvider implements vscode.CustomTextEditorProvider {
         updateWebview();
       }
     });
+    const saveSub = vscode.workspace.onDidSaveTextDocument((saved) => {
+      if (saved.uri.toString() === document.uri.toString()) updateWebview();
+    });
     const configSub = vscode.workspace.onDidChangeConfiguration((e) => {
       if (e.affectsConfiguration("karacaMd")) {
         postConfig();
@@ -370,6 +375,7 @@ class KaracaMarkdownProvider implements vscode.CustomTextEditorProvider {
 
     webviewPanel.onDidDispose(() => {
       changeSub.dispose();
+      saveSub.dispose();
       configSub.dispose();
       this.panels.delete(document.uri.toString());
       this.docVersions.delete(document.uri.toString());
@@ -387,42 +393,23 @@ class KaracaMarkdownProvider implements vscode.CustomTextEditorProvider {
           break;
         }
         case "edit": {
-          // Webview full-text + taban sürüm gönderir. Döngüyü önlemek için aynılık kontrolü.
-          const newText: string = msg.text ?? "";
-          if (newText === document.getText()) {
-            break;
+          if (typeof msg.text !== "string" || typeof msg.requestId !== "number") break;
+          const current = normalizeNewlines(document.getText());
+          const baseText = msg.base === document.version ? current : this.getVersionText(document.uri, msg.base);
+          const merged = msg.text === current ? current : baseText === undefined ? null : mergeTexts(normalizeNewlines(baseText), current, normalizeNewlines(msg.text));
+          let conflict = merged === null;
+          if (merged !== null && merged !== current) {
+            try { conflict = !(await this.applyText(document, merged)); }
+            catch { conflict = true; }
           }
-          const base = typeof msg.base === "number" ? msg.base : undefined;
-          const cur = document.version;
-          if (base === undefined || base === cur) {
-            await this.applyText(document, newText);
-            break;
-          }
-          const conflict = () => {
-            webviewPanel.webview.postMessage({
-              proto: PROTO,
-              type: "conflict",
-              text: document.getText(),
-              version: cur,
-            });
-            vscode.window.showWarningMessage(
-              "Dosya dışarıdan değişti; çakışmayı önlemek için diskteki sürüm korundu."
-            );
-          };
-          const baseText = this.getVersionText(document.uri, base);
-          if (baseText === undefined) {
-            // Taban artık tarihte yok: güvenli tarafta kal
-            conflict();
-            break;
-          }
-          const merged = mergeTexts(baseText, document.getText(), newText);
-          if (merged === null) {
-            conflict();
-          } else if (merged !== document.getText()) {
-            await this.applyText(document, merged);
-          } else {
-            updateWebview();
-          }
+          webviewPanel.webview.postMessage({
+            proto: PROTO, type: "edit-result", requestId: msg.requestId,
+            text: document.getText(), version: document.version, isDirty: document.isDirty, conflict,
+          });
+          break;
+        }
+        case "save": {
+          await document.save();
           break;
         }
         case "open-link": {
@@ -438,6 +425,10 @@ class KaracaMarkdownProvider implements vscode.CustomTextEditorProvider {
         }
         case "paste-image": {
           await this.handlePasteImage(document, msg);
+          break;
+        }
+        case "save-image": {
+          await this.handleSaveImage(document, webviewPanel, msg);
           break;
         }
         case "resolve-imgs": {
@@ -542,44 +533,79 @@ class KaracaMarkdownProvider implements vscode.CustomTextEditorProvider {
     }
   }
 
+  // Panodaki görseli assets/ altına kaydeder, göreli yolu döner (yazma yok)
+  private async savePastedImage(
+    document: vscode.TextDocument,
+    dataUrl: string
+  ): Promise<string | null> {
+    const m = dataUrl.match(/^data:(image\/[a-zA-Z0-9+.-]+);base64,(.+)$/);
+    if (!m) {
+      return null;
+    }
+    const mime = m[1].toLowerCase();
+    const ext = mimeToExt(mime);
+    if (!ext) {
+      vscode.window.showWarningMessage(`Desteklenmeyen görsel türü: ${mime}`);
+      return null;
+    }
+    const buf = Buffer.from(m[2], "base64");
+    if (buf.length > 15 * 1024 * 1024) {
+      vscode.window.showWarningMessage("Görsel 15 MB'tan büyük, yapıştırılamadı.");
+      return null;
+    }
+    const docDir = path.dirname(document.uri.fsPath);
+    const assetsDir = vscode.Uri.file(path.join(docDir, "assets"));
+    await vscode.workspace.fs.createDirectory(assetsDir);
+    const stamp = new Date().toISOString().replace(/[^0-9]/g, "").slice(0, 14);
+    let name = `yapistirilan-${stamp}.${ext}`;
+    let target = vscode.Uri.file(path.join(assetsDir.fsPath, name));
+    let i = 1;
+    while (await this.existsUri(target)) {
+      name = `yapistirilan-${stamp}-${i}.${ext}`;
+      target = vscode.Uri.file(path.join(assetsDir.fsPath, name));
+      i++;
+    }
+    await vscode.workspace.fs.writeFile(target, buf);
+    return path.relative(docDir, target.fsPath).split(path.sep).join("/");
+  }
+
   private async handlePasteImage(document: vscode.TextDocument, msg: any) {
     try {
-      const dataUrl: string = msg.dataUrl ?? "";
-      const m = dataUrl.match(/^data:(image\/[a-zA-Z0-9+.-]+);base64,(.+)$/);
-      if (!m) {
+      const rel = await this.savePastedImage(document, msg.dataUrl ?? "");
+      if (!rel) {
         return;
       }
-      const mime = m[1].toLowerCase();
-      const ext = mimeToExt(mime);
-      if (!ext) {
-        vscode.window.showWarningMessage(`Desteklenmeyen görsel türü: ${mime}`);
-        return;
-      }
-      const buf = Buffer.from(m[2], "base64");
-      if (buf.length > 15 * 1024 * 1024) {
-        vscode.window.showWarningMessage("Görsel 15 MB'tan büyük, yapıştırılamadı.");
-        return;
-      }
-      const docDir = path.dirname(document.uri.fsPath);
-      const assetsDir = vscode.Uri.file(path.join(docDir, "assets"));
-      await vscode.workspace.fs.createDirectory(assetsDir);
-      const stamp = new Date().toISOString().replace(/[^0-9]/g, "").slice(0, 14);
-      let name = `yapistirilan-${stamp}.${ext}`;
-      let target = vscode.Uri.file(path.join(assetsDir.fsPath, name));
-      let i = 1;
-      while (await this.existsUri(target)) {
-        name = `yapistirilan-${stamp}-${i}.${ext}`;
-        target = vscode.Uri.file(path.join(assetsDir.fsPath, name));
-        i++;
-      }
-      await vscode.workspace.fs.writeFile(target, buf);
-      const rel = path.relative(docDir, target.fsPath).split(path.sep).join("/");
       const full = document.getText();
       const cursor = Math.max(0, Math.min(Number(msg.cursor) || 0, full.length));
       const snippet = `![görsel](${rel})`;
       const next = full.slice(0, cursor) + snippet + full.slice(cursor);
       await this.applyText(document, next);
     } catch (err: any) {
+      vscode.window.showErrorMessage(`Görsel yapıştırılamadı: ${err?.message ?? err}`);
+    }
+  }
+
+  // Tek-yüzey canlı mod: dosyayı kaydeder, yolu geri yollar (ekleme webview'de)
+  private async handleSaveImage(
+    document: vscode.TextDocument,
+    webviewPanel: vscode.WebviewPanel,
+    msg: any
+  ) {
+    try {
+      const rel = await this.savePastedImage(document, msg.dataUrl ?? "");
+      webviewPanel.webview.postMessage({
+        proto: PROTO,
+        type: "img-saved",
+        nonce: msg.nonce ?? "",
+        path: rel ?? "",
+      });
+    } catch (err: any) {
+      webviewPanel.webview.postMessage({
+        proto: PROTO,
+        type: "img-saved",
+        nonce: msg.nonce ?? "",
+        path: "",
+      });
       vscode.window.showErrorMessage(`Görsel yapıştırılamadı: ${err?.message ?? err}`);
     }
   }
@@ -670,58 +696,7 @@ ${katexStyle}
 <title>Karaca MD Editor</title>
 </head>
 <body>
-<div id="formatbar" class="hidden">
-  <button type="button" data-cmd="undo" title="Geri al">↺</button>
-  <button type="button" data-cmd="redo" title="Yinele">↻</button>
-  <span class="fsep"></span>
-  <button type="button" data-cmd="bold" title="Kalın"><b>B</b></button>
-  <button type="button" data-cmd="italic" title="İtalik"><i>I</i></button>
-  <button type="button" data-cmd="strike" title="Üstü çizili"><s>S</s></button>
-  <button type="button" data-cmd="heading-menu" title="Başlık seviyesi">H ▾</button>
-  <span class="fsep"></span>
-  <button type="button" data-cmd="bullet" title="Madde listesi">•</button>
-  <button type="button" data-cmd="numbered" title="Numaralı liste">1.</button>
-  <button type="button" data-cmd="task" title="Görev listesi">☐</button>
-  <button type="button" data-cmd="quote" title="Alıntı">❝</button>
-  <button type="button" data-cmd="code" title="Kod">‹›</button>
-  <span class="fsep"></span>
-  <button type="button" data-cmd="table-menu" title="Tablo işlemleri">▦ Tablo ▾</button>
-  <button type="button" data-cmd="link" title="Bağlantı ekle">Link</button>
-  <button type="button" data-cmd="image" title="Görsel ekle">Görsel</button>
-  <span class="spacer"></span>
-  <span id="dirty" title="Kaydedilmemiş değişiklik"></span>
-  <div class="seg" role="tablist" aria-label="Mod">
-    <button id="btn-source" data-mode="source" title="Kaynak (ham markdown)">Kaynak</button>
-    <button id="btn-live" data-mode="live" title="Canlı önizleme">Canlı</button>
-    <button id="btn-split" data-mode="split" title="Split (kaynak + önizleme)">Split</button>
-    <button id="btn-reading" data-mode="reading" title="Okuma (salt okunur önizleme)">Okuma</button>
-  </div>
-  <span id="pkgmark" title="Derleme paketi">paket-1</span>
-</div>
-<div id="findbar" class="hidden">
-  <div class="frow">
-    <input id="find-input" type="text" placeholder="Bul…" aria-label="Bul" />
-    <button type="button" data-ffind="case" title="Büyük/küçük harf eşleşmesi">Aa</button>
-    <button type="button" data-ffind="word" title="Tüm sözcük">ab</button>
-    <button type="button" data-ffind="regex" title="Normal ifade">.*</button>
-    <span id="find-count"></span>
-    <button type="button" data-ffind="prev" title="Önceki">↑</button>
-    <button type="button" data-ffind="next" title="Sonraki">↓</button>
-    <button type="button" data-ffind="toggle-replace" title="Değiştir">≡</button>
-    <button type="button" data-ffind="close" title="Kapat">✕</button>
-  </div>
-  <div class="frow hidden" id="replace-row">
-    <input id="replace-input" type="text" placeholder="Değiştir…" aria-label="Değiştir" />
-    <button type="button" data-ffind="replace" title="Değiştir">Değiştir</button>
-    <button type="button" data-ffind="replace-all" title="Tümünü değiştir">Tümü</button>
-  </div>
-</div>
-<div id="main-row">
-<div id="source-wrap" class="hidden"><div id="cm-host"></div></div>
-<div id="split-preview" class="hidden"><div id="split-root" class="md-body"></div></div>
-</div>
-<div id="live-wrap" class="hidden"><div id="live-root" class="md-body"></div></div>
-<div id="reading-wrap" class="hidden"><div id="reading-root" class="md-body"></div><div id="back-to-live">Canlı düzenlemeye dönmek için çift tıklayın</div></div>
+${editorLayout}
 <script nonce="${nonce}">
 window.__karacaInitialMode = "live";
 </script>

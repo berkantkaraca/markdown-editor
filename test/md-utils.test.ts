@@ -4,8 +4,6 @@ import {
   buildFindRegex,  togglePrefix,
   toggleTaskLine,
   toggleHeadingLine,
-  isParaLike,
-  joinKeptLines,
   splitCells,
   joinCells,
   isTableBlock,
@@ -18,7 +16,6 @@ import {
   mimeToExt,
   escapeRegExp,
   setHeadingLevel,
-  listItemLineSpans,
   listEnterAction,
   mergeTexts,
 } from "../src/shared/md-utils.js";
@@ -52,31 +49,6 @@ describe("toggleHeadingLine", () => {
     assert.equal(toggleHeadingLine("Başlık"), "## Başlık");
     assert.equal(toggleHeadingLine("## Başlık"), "Başlık");
     assert.equal(toggleHeadingLine("### Derin"), "Derin");
-  });
-});
-
-describe("isParaLike", () => {
-  it("düz yazı true", () => {
-    assert.equal(isParaLike("merhaba dünya"), true);
-  });
-  it("yapısal satırlar false", () => {
-    for (const s of ["# H", "- madde", "1. sıra", "> alıntı", "| a |", "```js", "    kod", "- [ ] iş"]) {
-      assert.equal(isParaLike(s), false);
-    }
-  });
-});
-
-describe("joinKeptLines", () => {
-  it("silinen boşluk sonrası paragrafları bitiştirmez", () => {
-    const lines = ["A", "", "B", "", "C"];
-    assert.equal(joinKeptLines(lines, [false, true, true, true, false]), "A\n\nC");
-  });
-  it("tablo satırlarına ayraç koymaz", () => {
-    const lines = ["| a |", "| b |", "| c |"];
-    assert.equal(joinKeptLines(lines, [false, true, false]), "| a |\n| c |");
-  });
-  it("hepsi silinirse boş döner", () => {
-    assert.equal(joinKeptLines(["a", "b"], [true, true]), "");
   });
 });
 
@@ -203,38 +175,6 @@ describe("setHeadingLevel", () => {
   });
 });
 
-describe("listItemLineSpans", () => {
-  it("düz + iç içe + görev öğeleri", () => {
-    const lines = [
-      "1. Birinci adım",
-      "2. İkinci adım",
-      "   1. Alt adım A",
-      "   2. Alt adım B",
-      "3. Üçüncü adım",
-      "",
-      "- [ ] görev",
-    ];
-    assert.deepEqual(listItemLineSpans(lines), [
-      [0, 1],
-      [1, 2],
-      [2, 3],
-      [3, 4],
-      [4, 5],
-      [6, 7],
-    ]);
-  });
-  it("liste dışı satırları atlar, boşlukları budar", () => {
-    const lines = ["- a", "  devam satırı", "", "- b"];
-    assert.deepEqual(listItemLineSpans(lines), [
-      [0, 2],
-      [3, 4],
-    ]);
-  });
-  it("öğesiz metinde boş döner", () => {
-    assert.deepEqual(listItemLineSpans(["düz yazı", "devamı"]), []);
-  });
-});
-
 describe("listEnterAction", () => {
   it("devam: madde, numaralı (artan), görev", () => {
     assert.deepEqual(listEnterAction("- elma"), { kind: "continue", marker: "- " });
@@ -283,5 +223,13 @@ describe("escapeRegExp", () => {  it("özel karakterleri kaçırır, önek çak�
     assert.equal(re.test("[[Not (1)]]"), true);
     assert.equal(re.test("[[Not (1)#A]]"), true);
     assert.equal(re.test("[[Not (1)lar]]"), false);
+  });
+});
+
+
+describe("Unicode sözcük arama", () => {
+  it("Türkçe sözcük sınırları eşleşir, sözcüğün içi eşleşmez", () => {
+    const regex = buildFindRegex("şarkı", { caseSensitive: false, wholeWord: true, regex: false })!;
+    assert.deepEqual("şarkı ve şarkılar".match(regex), ["şarkı"]);
   });
 });

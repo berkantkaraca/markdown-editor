@@ -1,63 +1,59 @@
-# Karaca MD Editor (Tek Sekme)
+# Karaca MD Editor
 
-VS Code'da **tek dosyada markdown düzenleme + görüntüleme**.
+VS Code içinde Word benzeri tek yüzeyli WYSIWYG Markdown editörü.
+Paragraflar ve başlıklar aynı belge üzerinde düzenlenir; tıklayınca ayrı blok
+editörü veya ham Markdown kutusu açılmaz. Canlı düzenleme Tiptap/ProseMirror'a dayanır.
+Canlı ve Okuma aynı çerçevesiz görünümü, metin ölçülerini ve görev listesi düzenini kullanır.
 
-Artık `Markdown: Open Preview` + split zahmeti yok. Tek sekmede 3 mod:
+| Mod | Kullanım |
+| --- | --- |
+| Canlı | Biçimli belge üzerinde yazma, seçim ve düzenleme |
+| Kaynak | CodeMirror ile Markdown kaynağı |
+| Split | Kaynak ve önizleme yan yana |
+| Okuma | Salt okunur belge |
 
-| Mod | Davranış |
-|-----|----------|
-| **Kaynak** | Ham markdown (CodeMirror, satır no, word-wrap) |
-| **Canlı** (varsayılan) | Canlı önizleme: bloklar render'lı, tıkladığın blok ham markdown'a dönüşür, `Esc`/`Ctrl+Enter` ile render'a döner |
-| **Split** | Kaynak solda + önizleme sağda, senkron kaydırmalı |
-| **Okuma** | Salt okunur önizleme, çift tıkla Canlı'ya dön |
+Biçim çubuğu kalın, italik, üstü çizili, altı başlık seviyesi, listeler, görevler,
+alıntı, kod, tablo, bağlantı ve görsel eklemeyi destekler. Liste, tablo ve seçim
+işlemleri belge modeli üzerinde çalışır. Boş belgeye doğrudan yazılabilir.
 
-Modlar üstteki sekmelerden değişir.
+- Ctrl/Cmd+B, Ctrl/Cmd+I: kalın ve italik yazım.
+- Ctrl/Cmd+Z: geri al; Ctrl/Cmd+Shift+Z veya Ctrl+Y: yinele.
+- Ctrl/Cmd+F: bul; canlı modda değiştir işlemleri biçim işaretlerini korur.
+- Ctrl/Cmd+S: bekleyen belge değişikliklerini işleyip dosyayı kaydet.
+- Başlığın sonunda Enter: normal paragraf; listede Enter: yeni madde.
+- Listede Tab/Shift+Tab: girinti; boş maddede Enter: listeden çık.
+- Canlıda Ctrl/Cmd+tık: bağlantıyı aç.
 
-Ekstralar:
-- Görev listeleri (`- [ ]`) hem Canlı hem Okuma modunda **tıklanabilir** — dosyaya geri yazılır.
-- `[[WikiLink]]` desteği: tıkla → aynı klasörde / workspace'te ara, yoksa oluşturmayı teklif et.
-- Göreli dosya linkleri (ör. `y.md` dosyasına verilen bağlantı) aynı şekilde açılır/oluşturulur.
-- Kod blokları VS Code temasına uygun renkli vurgulanır (koyu/açık otomatik).
-- Panodan görsel yapıştırma (`Ctrl+V`): md dosyasının yanındaki `assets/` klasörüne kaydedilir, imlece `![](...)` eklenir.
-- Göreli görseller (`assets/x.png` gibi) önizlemede doğrudan gösterilir.
-- Üstteki biçim çubuğu (Kaynak, Canlı ve Split modda): geri al/yinele, kalın/italik/üstü çizili, başlık seviyeleri (H ▾), liste/alıntı/kod, tablo menüsü (▦ Tablo ▾), bağlantı/görsel ekleme (alan doldurmalı iletişim kutusuyla); mod sekmeleri çubuğun en sağında.
-- Liste satırında Enter: maddeye devam eder (numara artar, görev kutusu boşalır), boş maddede listeden çıkar / girintiyi azaltır.
-- Canlı önizlemede kopyalama markdown olarak yapılır (blok seçiminde kaynak metin panoya gider).
-- Kaynak modda `Ctrl+F` ile ara/değiştir (temaya uygun panel).
-- Canlı/Okuma/Split önizlemede `Ctrl+F` ile bulma çubuğu: büyük/küçük harf (Aa), tüm sözcük, normal ifade, sayaç, `Enter` ile gezinme; `≡` ile Değiştir/Tümü (kaynak metinde, `$1` destekli).
-- Canlı modda birden çok bloğu seçip `Delete` ile toplu silme.
-- Matematik (KaTeX): satır içi `$...$`, blok `$$...$$`.
-- Mermaid diyagramları (```mermaid blokları, koyu/açık temaya uyumlu).
-- Ön madde (frontmatter) tablo görünümü; tıklayınca ham hali düzenlenir.
-- Tablo düzenleyici: canlı blok üstünde ve biçim çubuğunda satır/sütun ekle-sil.
-- `[[Not#Başlık]]`, `[[Not|Etiket]]` ve aynı-dosya `#başlık` linklerinde başlığa kaydırma.
-- Gezgin panelinde **Karaca İçindekiler** (tıkla-satırına-git) ve **Karaca Geri Bağlantılar**.
-- Komutlar: `Karaca MD: Hızlı Not Oluştur`, `Karaca MD: Günlük Notu Aç`.
+Panodan görseller dosyanın yanındaki assets klasörüne kaydedilir. WikiLink,
+içindekiler, geri bağlantılar, hızlı not ve günlük not komutları kullanılabilir.
+Matematik, Mermaid ve YAML ön madde görüntülenir; kaynakları Kaynak modunda
+düzenlenir. Dış dosya değişikliğiyle çakışan yerel taslak kurtarma düğmesinde tutulur.
 
-## Çalıştırma (geliştirme)
+## Geliştirme ve deneme
 
 ```powershell
 npm install
+npm run lint
 npm run compile
-npm test            # birim testler (node --test, zero-dep)
-# sonra F5 ile Extension Development Host aç, bir .md dosyası aç
+npm test
+npm run test:browser
 ```
 
-`.md` dosyaları varsayılan olarak bu editörle açılır. İstemiyorsan sekmeye sağ tık → `Reopen Editor With... → Text Editor`, veya komut paletinden:
+VS Code'da F5 ile Extension Development Host açın; `sample.md` dosyasını açarak
+deneyin. Araç çubuğunda **paket-8** görünmelidir. Kurulu eski eklentiyi kullanıyorsanız
+Extension Development Host içindeki sürümü açtığınızdan emin olun.
 
-- `Karaca MD: Canlı Editörde Aç`
-- `Karaca MD: Varsayılan Metin Editörüyle Aç`
-- `Karaca MD: Hızlı Not Oluştur`
-- `Karaca MD: Günlük Notu Aç`
+Tarayıcı testleri Windows'ta Chrome/Edge'i bulur. Başka bir kurulum için
+`CHROME_PATH` kullanın veya `npx playwright install chromium` çalıştırın.
+Test ekran görüntüsü `out/editor-paket-8.png` dosyasına yazılır.
 
-## Ayarlar
+Ayarlar: `karacaMd.defaultMode` (`live`, `source`, `split`, `reading`),
+`karacaMd.wordWrap`, `karacaMd.lineNumbers`.
 
-- `karacaMd.defaultMode`: `live` | `source` | `split` | `reading` (varsayılan `live`)
-- `karacaMd.wordWrap`: kaynak editörde satır kaydırma (varsayılan `true`)
-- `karacaMd.lineNumbers`: kaynak editörde satır numaraları (varsayılan `true`)
+Canlı düzenleme eşdeğer Markdown yazımını normalize edebilir. Değiştirilmeyen
+belge yalnızca odak veya mod değişti diye yeniden yazılmaz. Desteklenmeyen ham
+HTML/Markdown uzantıları içeren belgeleri Kaynak modunda düzenleyin. Ayrıntılar
+`ARCHITECTURE.md` içindedir.
 
-## Bilinen sınırlamalar (V2 yol haritası)
-
-- Workspace dışına taşan görseller (`../../` ile workspace kökünün üstüne) güvenlik gereği gösterilmez.
-- Matematik (KaTeX) ve Mermaid diyagramları henüz yok.
-- CodeMirror teması statik (açılıştaki temaya göre); dinamik tema takibi V2'de.
+Enter ile eklenen boş paragraflar, kaydetme ve yeniden açma sırasında korunmak için
+Markdown kaynağında `<p></p>` olarak saklanır.

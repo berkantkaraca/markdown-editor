@@ -1,0 +1,48 @@
+/* One palette for reading HTML and live model decorations. */
+:root {
+  --syntax-bg: #f3f3f3;
+  --syntax-fg: #242424;
+  --syntax-keyword: #0000ff;
+  --syntax-control: #af00db;
+  --syntax-type: #267f99;
+  --syntax-function: #795e26;
+  --syntax-variable: #001080;
+  --syntax-string: #a31515;
+  --syntax-comment: #008000;
+  --syntax-number: #098658;
+  --syntax-border: rgba(0, 0, 0, .06);
+}
+body.vscode-dark, body.vscode-high-contrast {
+  --syntax-bg: #282828;
+  --syntax-fg: #d4d4d4;
+  --syntax-keyword: #569cd6;
+  --syntax-control: #c586c0;
+  --syntax-type: #4ec9b0;
+  --syntax-function: #dcdcaa;
+  --syntax-variable: #9cdcfe;
+  --syntax-string: #ce9178;
+  --syntax-comment: #6a9955;
+  --syntax-number: #b5cea8;
+  --syntax-border: rgba(255, 255, 255, .04);
+}
+.md-body pre.hljs {
+  background: var(--syntax-bg); color: var(--syntax-fg);
+  border: 1px solid var(--syntax-border); border-radius: 3px;
+  padding: 24px 10px; margin: 22px 0;
+  font-family: var(--vscode-editor-font-family, Consolas, "Courier New", monospace);
+  font-size: var(--vscode-editor-font-size, 13px); line-height: 1.5;
+  tab-size: 4;
+}
+.md-body pre.hljs code { font: inherit; color: inherit; background: transparent; padding: 0; }
+.hljs-keyword, .hljs-literal, .hljs-name { color: var(--syntax-keyword); }
+.hljs-control { color: var(--syntax-control); }
+.hljs-type, .hljs-built_in, .hljs-title.class_, .hljs-meta { color: var(--syntax-type); }
+.hljs-title, .hljs-title.function_ { color: var(--syntax-function); }
+.hljs-variable, .hljs-property, .hljs-attr, .hljs-attribute, .hljs-template-variable { color: var(--syntax-variable); }
+.hljs-string, .hljs-regexp, .hljs-meta .hljs-string { color: var(--syntax-string); }
+.hljs-comment, .hljs-quote, .hljs-doctag { color: var(--syntax-comment); }
+.hljs-number, .hljs-symbol, .hljs-bullet { color: var(--syntax-number); }
+.hljs-section, .hljs-selector-class, .hljs-selector-id { color: var(--syntax-function); }
+.hljs-tag, .hljs-selector-tag { color: var(--syntax-keyword); }
+.hljs-emphasis { font-style: italic; }
+.hljs-strong { font-weight: bold; }

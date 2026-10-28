@@ -5,7 +5,9 @@ import { buildFindRegex as makeFindRegex } from "../shared/md-utils";
 export interface SearchDeps {
   getMode(): string;
   getText(): string;
-  record(force?: boolean): void;
+  liveFind(query: RegExp | null, active?: number): number;
+  liveStep(index: number): void;
+  liveReplace(index: number, replacement: string, all: boolean): void;
   applyFullText(text: string): void;
   roots: {
     live: HTMLElement;
@@ -30,6 +32,7 @@ export function attachFindbar(deps: SearchDeps): FindApi {
   let findOpen = false;
   let findMarks: HTMLElement[] = [];
   let findIdx = -1;
+  let liveCount = 0;
   let findCase = false;
   let findWord = false;
   let findRegex = false;
@@ -52,6 +55,9 @@ export function attachFindbar(deps: SearchDeps): FindApi {
   function openFind() {
     findOpen = true;
     findbar.classList.remove("hidden");
+    findbar.querySelectorAll<HTMLButtonElement>('[data-ffind="toggle-replace"], [data-ffind="replace"], [data-ffind="replace-all"]').forEach((button) => {
+      button.disabled = deps.getMode() === "reading";
+    });
     findInput.focus();
     findInput.select();
     updateFind();
@@ -64,6 +70,8 @@ export function attachFindbar(deps: SearchDeps): FindApi {
   }
 
   function clearFindMarks() {
+    deps.liveFind(null);
+    liveCount = 0;
     document.querySelectorAll("mark.find-hit").forEach((node) => {
       const m = node as HTMLElement;
       const parent = m.parentNode;
@@ -99,6 +107,12 @@ export function attachFindbar(deps: SearchDeps): FindApi {
     const re = buildFindRegex();
     if (!re) {
       findCount.textContent = "hatalı ifade";
+      return;
+    }
+    if (deps.getMode() === "live") {
+      liveCount = deps.liveFind(re, 0);
+      findIdx = liveCount ? 0 : -1;
+      updateFindCount();
       return;
     }
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
@@ -161,16 +175,24 @@ export function attachFindbar(deps: SearchDeps): FindApi {
   }
 
   function applyReplaceAll() {
+    if (deps.getMode() === "reading") return;
+    if (deps.getMode() === "live") {
+      deps.liveReplace(findIdx, replaceInput.value, true); updateFind(); return;
+    }
     const re = buildFindRegex();
     if (!re) {
       return;
     }
-    deps.record(true);
+
     // String.replace $1, $& gibi desenleri kendi genişletir
     deps.applyFullText(deps.getText().replace(re, replaceInput.value));
   }
 
   function applyReplaceOne() {
+    if (deps.getMode() === "reading") return;
+    if (deps.getMode() === "live") {
+      deps.liveReplace(findIdx, replaceInput.value, false); updateFind(); return;
+    }
     const all = docMatches();
     if (all.length === 0) {
       return;
@@ -183,7 +205,7 @@ export function attachFindbar(deps: SearchDeps): FindApi {
     const single = new RegExp(`^(?:${re.source})$`, re.flags.replace("g", ""));
     const currentText = deps.getText();
     const rep = currentText.slice(s, e).replace(single, replaceInput.value);
-    deps.record(true);
+
     deps.applyFullText(currentText.slice(0, s) + rep + currentText.slice(e));
   }
 
@@ -204,7 +226,7 @@ export function attachFindbar(deps: SearchDeps): FindApi {
       return;
     }
     findCount.textContent =
-      findMarks.length === 0 ? "bulunamadı" : `${findIdx + 1} / ${findMarks.length}`;
+      (liveCount || findMarks.length) === 0 ? "bulunamadı" : `${findIdx + 1} / ${liveCount || findMarks.length}`;
   }
 
   function showFindMark(i: number) {
@@ -216,6 +238,11 @@ export function attachFindbar(deps: SearchDeps): FindApi {
   }
 
   function stepFind(dir: 1 | -1) {
+    if (deps.getMode() === "live") {
+      if (!liveCount) return;
+      findIdx = (findIdx + dir + liveCount) % liveCount;
+      deps.liveStep(findIdx); updateFindCount(); return;
+    }
     if (findMarks.length === 0) {
       return;
     }

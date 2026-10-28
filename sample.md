@@ -1,77 +1,81 @@
-# Başlık Seviyesi 1 (H1)
-## Başlık Seviyesi 2 (H2)
-### Başlık Seviyesi 3 (H3)
-#### Başlık Seviyesi 4 (H4)
-##### Başlık Seviyesi 5 (H5)
-###### Başlık Seviyesi 6 (H6)
+# H1 Başlığı: Ana Başlık
 
----
+## H2 Başlığı: Alt Başlık
 
-## Metin Biçimlendirme ve Vurgular
+### H3 Başlığı: Bölüm Başlığı
 
-*Bu metin italiktir* veya _bu metin italiktir_.  
-**Bu metin koyudur** veya __bu metin koyudur__.  
-***Bu metin hem koyu hem italiktir***.  
-~~Bu metnin üzeri çizilidir.~~  
-==Bu metin fosforlu/vurguludur.==  
-H~2~O (Alt simge) ve X^2^ (Üst simge)
+#### H4 Başlığı
 
----
+##### H5 Başlığı
 
-## Listeler
+###### H6 Başlığıf
 
-### Sırasız Liste
-* Birinci öge
-  * Alt öge 1
-  * Alt öge 2
-* İkinci öge
-* Üçüncü öge
+* * *
 
-### Sıralı Liste
-1. Birinci adım
-2. İkinci adım
-   1. Alt adım A
-   2. Alt adım B
-3. Üçüncü adım
+## 1\. Metin Biçimlendirme (Typography)
 
-- [x] Tamamlanmış görev
-- [ ] Bekleyen görev 1
-- [ ] Bekleyen görev 2
+Bu paragrafta **kalın metin**, *italik metin*, ***kalın ve italik metin***, ~~üstü çizili metin~~ ve `satır içi kod (inline code)` bulunmaktadır. Ayrıca buraya bir [örnek bağlantı (Link)](https://berkantkaraca.com) eklenmiştir.
 
-### Tanım Listesi (Definition List)
-Markdown
-: Metin tabanlı işaretleme dili.
+* * *
 
----
+## 2\. Alıntılar (Blockquotes)
 
-## Bağlantılar ve Görseller
+> Bu tek satırlık standart bir alıntıdır.
+> 
+> İkinci paragrafı içeren çok satırlı alıntı bloğu.
+> 
+> > İç içe (nested) alıntı bloğu örneği.
 
-[StackEdit Sayfasına Git](https://stackedit.io)  
-[Referans Tipi Bağlantı][1]
+* * *
 
-Görsel örneği:  
-![Örnek Görsel](https://picsum.photos/400/200)
+## 3\. Listeler (Lists)
 
-[1]: https://markdownlivepreview.com "Referans Bağlantı Başlığı"
+### Sırasız Liste (Unordered List)
 
----
+-   ~~Elma~~
+    
+-   Armut
+    
+    -   Yeşil elma
+        
+    -   Deveci armudu
+        
+-   Muz
+    
 
+### Sıralı Liste (Ordered List)
 
+1.  Projeyi klonla
+    
+2.  Bağımlılıkları yükle (`npm install`)
+    
+3.  Uygulamayı ayağa kaldır (`npm run dev`)
+    
 
-### Flowchart
-```mermaid
-graph LR
-A[Başlangıç] -- İşlem --> B((Karar))
-A --> C(Seçenek 1)
-B --> D{Sonuç}
-C --> D
+### Görev Listesi (Task List)
+
+- [ ] Markdown ayrıştırıcısı yazıldı
+- [ ] Kod renklendirme (syntax highlighting) eklendi
+- [ ] VS Code eklentisi yayınlandı
+
+* * *
+
+## 4\. Tablolar (Tables)
+
+<table style="min-width: 75px;"><colgroup><col style="min-width: 25px;"><col style="min-width: 25px;"><col style="min-width: 25px;"></colgroup><tbody><tr><th style="text-align: left;"><p>Dil / Teknoloji</p></th><th style="text-align: center;"><p>Kategori</p></th><th style="text-align: right;"><p>Seviye</p></th></tr><tr><td style="text-align: left;"><p>Java / Spring Boot</p></td><td style="text-align: center;"><p>Backend</p></td><td style="text-align: right;"><p>İleri</p></td></tr><tr><td style="text-align: left;"><p>TypeScript / Angular</p></td><td style="text-align: center;"><p>Frontend</p></td><td style="text-align: right;"><p>Orta</p></td></tr><tr><td style="text-align: left;"><p>PostgreSQL / Redis</p></td><td style="text-align: center;"><p>Veritabanı</p></td><td style="text-align: right;"><p>İleri</p></td></tr></tbody></table>
+
+* * *
+
+## 5\. Kod Blokları (Code Blocks)
+
+### Java Spring Boot Örneği
+
+```java
+@RestController@RequestMapping("/api/v1/hello")public class HelloController {
+
+    @GetMapping
+    public ResponseEntity<String> sayHello() {
+        return ResponseEntity.ok("Hello, Markdown!");
+    }
+}
 ```
-
----
-
-## Yerleşik HTML Etiketleri
-yhhhjkjkjhkjhkjkhkjhkjhjkhjkhdsfsfsdf sdsf sdfs
-
-
-
-

@@ -70,36 +70,28 @@ body {
   font-size: 14px;
   overflow-wrap: anywhere;
 }
-.block {
-  border-radius: 6px;
-  padding: 2px 8px;
-  margin: 2px -8px;
-  cursor: text;
-  transition: background .12s;
-}
-.block:hover { background: var(--md-hover); }
-.block.editing { background: transparent; }
-.block.editing textarea {
-  display: block;
-  width: 100%;
-  resize: none;
-  overflow: hidden;
-  background: transparent;
-  color: inherit;
-  border: 0;
-  border-radius: 0;
-  padding: 0;
-  font: inherit;
-  line-height: inherit;
+/* Canlı: tek-yüzey Word-benzeri belge (blok kutusu yok, ham markdown yok) */
+#live-root {
   outline: none;
-  min-height: 1.6em;
+  cursor: text;
+  min-height: 60vh;
+  caret-color: var(--vscode-editor-foreground);
 }
-.block.editing textarea.mono {
-  font-family: var(--vscode-editor-font-family, monospace);
-  font-size: 13px;
+#live-root:focus { outline: none; }
+#live-root:empty::before {
+  content: "Yazmak için tıklayın…";
+  opacity: .45;
+  font-style: italic;
+  pointer-events: none;
 }
+#live-root.flash { animation: mdflash 1.5s ease-out; }
+#live-root .frontmatter { cursor: default; user-select: none; }
+#live-root div.mermaid { cursor: default; user-select: none; }
+#live-root .katex, #live-root .katex-display { cursor: default; }
+#live-root pre.hljs { cursor: text; }
+#live-root table { cursor: default; }
+#live-root td:focus, #live-root th:focus { outline: 1px solid var(--md-accent); }
 .empty-hint { opacity: .45; font-style: italic; margin: 4px 0; }
-.gap-spacer { min-height: 10px; }
 
 .md-body h1, .md-body h2, .md-body h3, .md-body h4 { line-height: 1.3; margin: 1.1em 0 .5em; font-weight: 650; }
 .md-body h1 { font-size: 1.7em; border-bottom: 1px solid var(--md-border); padding-bottom: .3em; }
@@ -108,8 +100,8 @@ body {
 .md-body a { color: var(--md-accent); text-decoration: none; }
 .md-body a:hover { text-decoration: underline; }
 .md-body code { background: var(--md-code-bg); border-radius: 4px; padding: 1px 5px; font-size: .9em; font-family: var(--vscode-editor-font-family, monospace); }
-.md-body pre.hljs { background: var(--md-code-bg); border: 1px solid var(--md-border); border-radius: 8px; padding: 12px 14px; overflow-x: auto; }
-.md-body pre.hljs code { background: none; padding: 0; }
+.md-body pre { background: var(--md-code-bg); border: 1px solid var(--md-border); border-radius: 8px; padding: 12px 14px; overflow-x: auto; }
+.md-body pre code { background: none; padding: 0; }
 .md-body blockquote { border-left: 3px solid var(--md-accent); margin: .8em 0; padding: 2px 12px; opacity: .9; }
 .md-body table { border-collapse: collapse; margin: .8em 0; width: 100%; }
 .md-body th, .md-body td { border: 1px solid var(--md-border); padding: 6px 10px; }
@@ -151,15 +143,10 @@ body {
 #formatbar button[data-cmd]:hover:not(:disabled) { background: var(--md-hover); border-color: var(--md-border); }
 #formatbar button[data-cmd]:disabled { opacity: .35; cursor: default; }
 #formatbar .fsep { width: 1px; height: 18px; background: var(--md-border); margin: 0 4px; }
-.block.flash { animation: mdflash 1.5s ease-out; }
 @keyframes mdflash {
   0% { background: rgba(234, 179, 8, .28); }
   100% { background: transparent; }
 }
-/* Tablo işlem çubuğu (canlı blok üstü) */
-.tablebar { display: flex; gap: 4px; margin-bottom: 4px; }
-.tablebar button { border: 1px solid var(--md-border); background: var(--md-hover); color: inherit; border-radius: 5px; padding: 2px 8px; font-size: 12px; cursor: pointer; }
-.tablebar button:hover { background: var(--vscode-button-secondaryBackground, #3a3d41); }
 /* Mermaid */
 .mermaid { background: var(--md-code-bg); border: 1px solid var(--md-border); border-radius: 8px; padding: 12px; margin: .8em 0; text-align: center; overflow-x: auto; }
 .mermaid svg { max-width: 100%; height: auto; }
@@ -193,3 +180,67 @@ mark.find-hit.current { background: var(--vscode-editor-findMatchHighlightBackgr
 #cm-host .cm-panel.cm-search button.cm-button:hover { background: var(--md-hover); }
 #cm-host .cm-panel.cm-search label { display: inline-flex; align-items: center; gap: 4px; margin: 0 2px; opacity: .9; }
 #cm-host .cm-panel.cm-search input[type="checkbox"] { accent-color: var(--md-accent); }
+/* Canlı ve Okuma aynı kesintisiz metin alanını kullanır. */
+#live-wrap, #reading-wrap { background: var(--vscode-editor-background); padding: 0; }
+#live-root, #reading-root { min-height: 100%; }
+#live-root table { cursor: text; }
+.md-body > :first-child, .tiptap > :first-child { margin-top: 0; }
+#formatbar { padding: 10px 16px; gap: 6px; }
+#formatbar button[data-cmd] { height: 30px; min-width: 30px; }
+#formatbar button:focus-visible, .seg button:focus-visible {
+  outline: 2px solid var(--vscode-focusBorder, #4da3ff); outline-offset: 2px;
+}
+@media (max-width: 640px) {
+  .md-body { padding: 20px 18px 60px; }
+  #formatbar { padding: 6px 8px; }
+  .seg button { padding: 6px 8px; }
+}
+
+/* One continuous ProseMirror document; no per-paragraph controls or containers. */
+#live-root .tiptap { outline: none; min-height: 65vh; white-space: pre-wrap; overflow-wrap: break-word; }
+#live-root .tiptap > :first-child { margin-top: 0; }
+#live-root .tiptap p:only-child:has(> br.ProseMirror-trailingBreak:only-child)::before {
+  content: "Yazmaya başlayın…"; color: var(--vscode-descriptionForeground); float: left;
+  height: 0; pointer-events: none;
+}
+ .md-body pre { white-space: pre; }
+.md-body pre code { background: transparent; padding: 0; }
+.md-body li > p { margin: 0; }
+.md-body li[data-type="taskItem"] { position: relative; padding-left: 22px; }
+.md-body li[data-type="taskItem"] > label {
+  position: absolute; left: 0; top: 0; height: 1.65em;
+  display: flex; align-items: center; user-select: none;
+}
+.md-body li[data-type="taskItem"] > label input { margin: 0; }
+.md-body li[data-type="taskItem"] > div { min-width: 0; }
+.md-body li[data-type="taskItem"] > div > p { margin: 0; }
+#live-root .selectedCell { background: var(--vscode-editor-selectionBackground, #264f78); }
+#live-root .ProseMirror-selectednode { outline: 2px solid var(--md-accent); }
+#live-root .ProseMirror-gapcursor { display: none; pointer-events: none; position: absolute; }
+#live-root .ProseMirror-gapcursor:after { content: ""; display: block; position: absolute; top: -2px; width: 20px; border-top: 1px solid currentColor; animation: cursor-blink 1s steps(2, start) infinite; }
+#live-root .ProseMirror-focused .ProseMirror-gapcursor { display: block; }
+@keyframes cursor-blink { to { visibility: hidden; } }
+#formatbar button[data-cmd].on { background: var(--vscode-editor-selectionBackground, #264f78); border-color: var(--md-accent); }
+.find-hit { background: var(--vscode-editor-findMatchHighlightBackground, #735c0f); color: inherit; }
+.find-hit.current { outline: 1px solid var(--md-accent); }
+#live-root .preserved-content { cursor: default; }
+
+.md-body td > p, .md-body th > p { margin: 0; }
+#live-root .tiptap > .preserved-content:first-child > :first-child { margin-top: 0; }
+
+#formatbar { min-height: 51px; }
+.md-body input[type="checkbox"] {
+  appearance: none; display: inline-grid; place-content: center;
+  background: var(--vscode-checkbox-background, var(--md-code-bg));
+  border: 1px solid var(--vscode-checkbox-border, #888); border-radius: 2px;
+  color: var(--vscode-checkbox-foreground, currentColor); opacity: 1;
+}
+.md-body input[type="checkbox"]:checked::before {
+  content: ""; width: 8px; height: 4px; margin-top: -2px;
+  border-left: 2px solid currentColor; border-bottom: 2px solid currentColor;
+  transform: rotate(-45deg);
+}
+.md-body input[type="checkbox"]:disabled { cursor: default; }
+
+/* An empty paragraph occupies a writable line in Live and Reading alike. */
+.md-body p:empty { min-height: 1lh; }

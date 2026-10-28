@@ -1,0 +1,52 @@
+<div id="formatbar" class="hidden">
+  <button type="button" data-cmd="undo" title="Geri al">↺</button>
+  <button type="button" data-cmd="redo" title="Yinele">↻</button>
+  <span class="fsep"></span>
+  <button type="button" data-cmd="bold" title="Kalın"><b>B</b></button>
+  <button type="button" data-cmd="italic" title="İtalik"><i>I</i></button>
+  <button type="button" data-cmd="strike" title="Üstü çizili"><s>S</s></button>
+  <button type="button" data-cmd="heading-menu" title="Başlık seviyesi">H ▾</button>
+  <span class="fsep"></span>
+  <button type="button" data-cmd="bullet" title="Madde listesi">•</button>
+  <button type="button" data-cmd="numbered" title="Numaralı liste">1.</button>
+  <button type="button" data-cmd="task" title="Görev listesi">☐</button>
+  <button type="button" data-cmd="quote" title="Alıntı">❝</button>
+  <button type="button" data-cmd="code" title="Kod">‹›</button>
+  <span class="fsep"></span>
+  <button type="button" data-cmd="table-menu" title="Tablo işlemleri">▦ Tablo ▾</button>
+  <button type="button" data-cmd="link" title="Bağlantı ekle">Link</button>
+  <button type="button" data-cmd="image" title="Görsel ekle">Görsel</button>
+  <span class="spacer"></span>
+  <span id="dirty" title="Kaydedilmemiş değişiklik"></span>
+  <div class="seg" role="tablist" aria-label="Mod">
+    <button id="btn-source" data-mode="source" title="Kaynak (ham markdown)">Kaynak</button>
+    <button id="btn-live" data-mode="live" title="Canlı düzenleme (Word benzeri)">Canlı</button>
+    <button id="btn-split" data-mode="split" title="Split (kaynak + önizleme)">Split</button>
+    <button id="btn-reading" data-mode="reading" title="Okuma (salt okunur önizleme)">Okuma</button>
+  </div>
+  <span id="pkgmark" title="Derleme paketi">paket-8</span>
+</div>
+<div id="findbar" class="hidden">
+  <div class="frow">
+    <input id="find-input" type="text" placeholder="Bul…" aria-label="Bul" />
+    <button type="button" data-ffind="case" title="Büyük/küçük harf eşleşmesi">Aa</button>
+    <button type="button" data-ffind="word" title="Tüm sözcük">ab</button>
+    <button type="button" data-ffind="regex" title="Normal ifade">.*</button>
+    <span id="find-count"></span>
+    <button type="button" data-ffind="prev" title="Önceki">↑</button>
+    <button type="button" data-ffind="next" title="Sonraki">↓</button>
+    <button type="button" data-ffind="toggle-replace" title="Değiştir">≡</button>
+    <button type="button" data-ffind="close" title="Kapat">✕</button>
+  </div>
+  <div class="frow hidden" id="replace-row">
+    <input id="replace-input" type="text" placeholder="Değiştir…" aria-label="Değiştir" />
+    <button type="button" data-ffind="replace" title="Değiştir">Değiştir</button>
+    <button type="button" data-ffind="replace-all" title="Tümünü değiştir">Tümü</button>
+  </div>
+</div>
+<div id="main-row">
+<div id="source-wrap" class="hidden"><div id="cm-host"></div></div>
+<div id="split-preview" class="hidden"><div id="split-root" class="md-body"></div></div>
+</div>
+<div id="live-wrap" class="hidden"><div id="live-root" class="md-body"></div></div>
+<div id="reading-wrap" class="hidden"><div id="reading-root" class="md-body"></div><div id="back-to-live">Canlı düzenlemeye dönmek için çift tıklayın</div></div>
