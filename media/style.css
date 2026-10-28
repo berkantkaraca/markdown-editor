@@ -35,7 +35,6 @@ body {
 .spacer { flex: 1; }
 #dirty { color: var(--vscode-errorForeground, #f48771); font-size: 14px; width: 12px; text-align: center; }
 #pkgmark { opacity: .4; font-size: 10px; white-space: nowrap; user-select: none; }
-#ui-language { max-width: 90px; padding: 5px 6px; border: 1px solid var(--md-border); border-radius: 6px; background: var(--vscode-editorWidget-background, #252526); color: inherit; font: inherit; font-size: 12px; }
 
 /* Açılır menü (başlık seviyeleri, tablo işlemleri) */
 .kmenu { position: absolute; z-index: 50; display: flex; flex-direction: column; min-width: 140px; background: var(--vscode-editorWidget-background, #252526); border: 1px solid var(--md-border); border-radius: 6px; padding: 4px; box-shadow: 0 4px 14px rgba(0,0,0,.35); }
@@ -265,6 +264,7 @@ mark.find-hit.current { background: var(--vscode-editor-findMatchHighlightBackgr
 #formatbar { gap: 12px; padding: 8px 12px; min-height: 51px; flex-wrap: nowrap; }
 .toolbar-actions { display: flex; align-items: center; flex: 1; min-width: 0; gap: 8px; overflow-x: auto; scrollbar-width: none; }
 .toolbar-actions::-webkit-scrollbar { display: none; }
+.toolbar-actions.reading-tools { visibility: hidden; pointer-events: none; }
 .toolbar-group { display: flex; align-items: center; gap: 3px; padding-right: 8px; border-right: 1px solid var(--md-border); flex-shrink: 0; }
 .toolbar-group:last-child { border-right: 0; padding-right: 0; }
 #formatbar button[data-cmd] { display: inline-flex; align-items: center; justify-content: center; gap: 7px; height: 32px; min-width: 32px; padding: 0 8px; border-radius: 7px; transition: background .12s, border-color .12s; line-height: 1.2; font-size: 12px; }

@@ -36,12 +36,10 @@ function updateLanguage(language: unknown): void {
   setLanguage(language);
   document.documentElement.lang = language === "tr" ? "tr" : "en";
   for (const id of ["formatbar", "findbar", "back-to-live", "sync-retry"]) localizeChrome($(id));
-  ($("ui-language") as HTMLSelectElement).value = document.documentElement.lang;
   for (const node of liveRoot.querySelectorAll<HTMLElement>(".preserved-content")) node.title = t("Düzenlemek için çift tıklayın");
   $("sync-message").textContent = syncState === "blocked" ? t("Kayıt tamamlanamadı. Taslağınız korundu.") : t("Kaydı yeniden deniyoruz…");
 }
 updateLanguage("en");
-$("ui-language").addEventListener("change", () => post({ type: "language", language: ($("ui-language") as HTMLSelectElement).value }));
 let toolbar: ReturnType<typeof attachFormatbar> | undefined;
 let find: ReturnType<typeof attachFindbar> | undefined;
 

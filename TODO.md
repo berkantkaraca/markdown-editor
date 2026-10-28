@@ -1,6 +1,6 @@
-# Durum — paket-13
+# Durum — paket-14
 
-- [x] Varsayılan İngilizce, isteğe bağlı Türkçe; kalıcı arayüz dil seçimi, yerelleştirilmiş komut/ayar açıklamaları.
+- [x] Varsayılan İngilizce, isteğe bağlı Türkçe; VS Code ayarlarından kalıcı dil seçimi, yerelleştirilmiş komut/ayar açıklamaları.
 - [x] berkantkaraca yayıncı/yazar bilgisi, SVG kaynak ve 256×256 PNG eklenti ikonu; eski taslak yedekleri için kimlik geçişi.
 
 - [x] Araç çubuğu: SVG simgeler, işlev grupları, aktif durumlar, dar ekran ve klavye gezinmesi.
@@ -16,3 +16,5 @@
 - [x] Uzun süre kesintisiz yazımda serileştirmeye 750 ms üst sınır; IME tamamlanana kadar dış güncellemeleri bekletme.
 
 - [x] Tablo ekleme: boyut ızgarası, özel satır/sütun sayısı, klavye kullanımı ve dar ekran desteği; Canlı ve Kaynak modlarında seçime ekleme.
+
+- [x] Kısa İngilizce README; dil ayarı yalnızca VS Code Settings içinde, Reading modunda sabit mod düğmeleri.

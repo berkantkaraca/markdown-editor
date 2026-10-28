@@ -75,7 +75,7 @@ describe("belge motoru: tek yüzey", () => {
     assert.equal(root().querySelectorAll('[contenteditable="true"]').length, 1);
     assert.equal(root().querySelectorAll(".block, textarea, .tablebar").length, 0);
     assert.equal(root().querySelector("h1").textContent, "Başlık");
-    assert.equal(doc.querySelector("#pkgmark").textContent, "paket-13");
+    assert.equal(doc.querySelector("#pkgmark").textContent, "paket-14");
   });
   it("odak kaybı kaynağı normalize etmez", async () => {
     load("Başlık\n======\n\n*   madde\n\n");

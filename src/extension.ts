@@ -421,13 +421,6 @@ class KaracaMarkdownProvider implements vscode.CustomTextEditorProvider {
           } else webviewPanel.webview.postMessage({ proto: PROTO, type: "draft-state", draft });
           break;
         }
-        case "language": {
-          if (msg.language === "en" || msg.language === "tr") {
-            await vscode.workspace.getConfiguration("karacaMd").update("language", msg.language, vscode.ConfigurationTarget.Global);
-            postConfig();
-          }
-          break;
-        }
         case "draft": {
           const draft = msg.draft;
           if (draft && typeof draft.text === "string" && typeof draft.baseText === "string" && Number.isFinite(draft.updatedAt)) {

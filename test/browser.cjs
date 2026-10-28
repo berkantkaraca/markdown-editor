@@ -44,7 +44,6 @@ beforeEach(async () => {
     },
       postMessage: (message) => {
         window.__posted.push(message);
-        if (message.type === "language") { sessionStorage.setItem("ui-language", message.language); send({ type: "config", language: message.language }); }
         if (message.type === "ready") setTimeout(() => {
           send({ type: "config", language: sessionStorage.getItem("ui-language") || "tr", defaultMode: "live" });
           send({ type: "update", text: documentText, version, isDirty: false });
@@ -126,7 +125,7 @@ test("örnek belge: tek yüzey, gerçek Mermaid render ve belge görünümü", a
   assert.equal(await page.locator("#live-root textarea, #live-root .block, #live-root .tablebar").count(), 0);
   await page.locator("#live-wrap").evaluate((element) => { element.scrollTop = 0; });
   fs.mkdirSync(path.join(__dirname, "../out"), { recursive: true });
-  await page.screenshot({ path: path.join(__dirname, "../out/editor-paket-13.png") });
+  await page.screenshot({ path: path.join(__dirname, "../out/editor-paket-14.png") });
   await page.getByRole("tab", { name: "Okuma", exact: true }).click();
   await page.getByRole("tab", { name: "Canlı", exact: true }).click();
   assert.equal(await page.locator('#live-root [contenteditable="true"]').count(), 1);
@@ -167,9 +166,9 @@ test("canlı ve okuma: çerçevesiz alan ve görev satırları aynı ölçülerd
     }
     assert.ok(Math.abs(live.tasks[i].box.y - live.tasks[i].content.y) < 7, "kutu metinle aynı satırda");
   }
-  await page.screenshot({ path: path.join(__dirname, "../out/reading-paket-13.png") });
+  await page.screenshot({ path: path.join(__dirname, "../out/reading-paket-14.png") });
   await page.getByRole("tab", { name: "Canlı", exact: true }).click();
-  await page.screenshot({ path: path.join(__dirname, "../out/live-paket-13.png") });
+  await page.screenshot({ path: path.join(__dirname, "../out/live-paket-14.png") });
 });
 
 
@@ -224,13 +223,13 @@ test("referans kod paleti Java ve TypeScript için Canlı/Okuma modlarında ayn�
   assert.equal(live.background, "rgb(40, 40, 40)");
   assert.deepEqual(live.tokens, ["rgb(78, 201, 176)", "rgb(78, 201, 176)", "rgb(220, 220, 170)", "rgb(197, 134, 192)", "rgb(206, 145, 120)", "rgb(86, 156, 214)", "rgb(156, 220, 254)"]);
   assert.deepEqual(live.source.map((source) => source.trimEnd()), [java, ts]);
-  await page.screenshot({ path: path.join(__dirname, "../out/code-live-paket-13.png") });
+  await page.screenshot({ path: path.join(__dirname, "../out/code-live-paket-14.png") });
   await page.getByRole("tab", { name: "Okuma", exact: true }).click();
   const reading = await colors("#reading-root");
   assert.deepEqual(reading.tokens, live.tokens);
   assert.equal(reading.background, live.background);
   assert.deepEqual(reading.source.map((source) => source.trimEnd()), [java, ts]);
-  await page.screenshot({ path: path.join(__dirname, "../out/code-reading-paket-13.png") });
+  await page.screenshot({ path: path.join(__dirname, "../out/code-reading-paket-14.png") });
 });
 
 
@@ -296,7 +295,7 @@ test("araç çubuğu dar ekranda erişilebilir ve simgeler etiketlidir", async (
   assert.equal(await page.evaluate(() => document.body.scrollWidth > innerWidth), false);
   await page.getByRole("tab", { name: "Okuma", exact: true }).click();
   await page.getByRole("tab", { name: "Canlı", exact: true }).click();
-  await page.screenshot({ path: path.join(__dirname, "../out/toolbar-mobile-paket-13.png") });
+  await page.screenshot({ path: path.join(__dirname, "../out/toolbar-mobile-paket-14.png") });
 });
 
 test("IME bileşimi ve Unicode metin kayıtta tek parça korunur", { skip: browserName !== "chromium" }, async () => {
@@ -320,8 +319,9 @@ test("Unicode yazım farklı tarayıcılarda kaydedilir", async () => {
 });
 
 test("dil seçimi İngilizce/Türkçe arayüzü değiştirir, belgeyi korur ve yeniden açılınca kalır", async () => {
+  assert.equal(await page.locator("#ui-language").count(), 0);
   const initialText = await page.evaluate(() => window.__karacaTest.sync.text);
-  await page.locator("#ui-language").selectOption("en");
+  await page.evaluate(() => { sessionStorage.setItem("ui-language", "en"); window.postMessage({ proto: 1, type: "config", language: "en" }, "*"); });
   await page.getByRole("tab", { name: "Live", exact: true }).waitFor();
   await page.getByRole("button", { name: "Table", exact: true }).click();
   const picker = page.getByRole("dialog", { name: "Insert table", exact: true });
@@ -331,12 +331,29 @@ test("dil seçimi İngilizce/Türkçe arayüzü değiştirir, belgeyi korur ve y
   await page.getByRole("dialog", { name: "Edit math", exact: true }).getByRole("button", { name: "Cancel", exact: true }).click();
   assert.equal(await page.evaluate(() => window.__karacaTest.sync.text), initialText);
   await page.reload(); await page.getByRole("tab", { name: "Live", exact: true }).waitFor();
-  await page.screenshot({ path: path.join(__dirname, "../out/english-paket-13.png") });
-  await page.locator("#ui-language").selectOption("tr");
+  await page.screenshot({ path: path.join(__dirname, "../out/english-paket-14.png") });
+  await page.evaluate(() => { sessionStorage.setItem("ui-language", "tr"); window.postMessage({ proto: 1, type: "config", language: "tr" }, "*"); });
   await page.getByRole("tab", { name: "Canlı", exact: true }).waitFor();
   await page.getByRole("button", { name: "Tablo", exact: true }).click();
   await page.getByRole("dialog", { name: "Tablo ekle", exact: true }).getByRole("spinbutton", { name: "Sütun", exact: true }).waitFor();
   assert.equal(await page.evaluate(() => window.__karacaTest.sync.text), initialText);
+});
+
+test("Reading modunda mod düğmeleri masaüstü ve dar ekranda yer değiştirmez", async () => {
+  for (const width of [1280, 850, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.getByRole("tab", { name: "Canlı", exact: true }).click();
+    const positions = async () => page.locator(".seg button").evaluateAll(buttons => buttons.map(button => {
+      const rect = button.getBoundingClientRect(); return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+    }));
+    const live = await positions();
+    await page.getByRole("tab", { name: "Okuma", exact: true }).click();
+    assert.deepEqual(await positions(), live);
+    assert.equal(await page.getByRole("button", { name: "Kalın", exact: true }).count(), 0);
+    await page.getByRole("tab", { name: "Canlı", exact: true }).click();
+    assert.deepEqual(await positions(), live);
+    assert.equal(await page.getByRole("button", { name: "Kalın", exact: true }).isVisible(), true);
+  }
 });
 
 test("tablo seçici: önizleme, klavye, özel boyut ve dar ekran", async () => {
@@ -355,7 +372,7 @@ test("tablo seçici: önizleme, klavye, özel boyut ve dar ekran", async () => {
   assert.equal(await picker.locator(".table-size").innerText(), "4 sütun × 5 satır");
   assert.equal(await picker.locator(".table-grid .selected").count(), 20);
   await page.setViewportSize({ width: 390, height: 800 });
-  await page.screenshot({ path: path.join(__dirname, "../out/table-picker-paket-13.png") });
+  await page.screenshot({ path: path.join(__dirname, "../out/table-picker-paket-14.png") });
   const box = await picker.boundingBox(); assert.ok(box.x >= 0 && box.x + box.width <= 390);
   await page.keyboard.press("Escape"); assert.equal(await picker.count(), 0);
   await page.getByRole("button", { name: "Tablo", exact: true }).click();

@@ -201,13 +201,16 @@ export function attachFormatbar(deps: FormatDeps) {
   function refreshBar() {
     bar.classList.remove("hidden");
     const reading = deps.getMode() === "reading", history = deps.history();
-    bar.querySelector<HTMLElement>(".toolbar-actions")?.classList.toggle("hidden", reading);
+    const actions = bar.querySelector<HTMLElement>(".toolbar-actions");
+    actions?.classList.toggle("reading-tools", reading);
+    actions?.setAttribute("aria-hidden", String(reading));
+    actions?.toggleAttribute("inert", reading);
     bar.querySelectorAll<HTMLElement>(".fsep").forEach((separator) => { separator.hidden = reading; });
     const states: Record<string, string> = { bold: "bold", italic: "italic", strike: "strike", code: "code",
       bullet: "bulletList", numbered: "orderedList", task: "taskList", quote: "blockquote" };
     for (const button of buttons) {
       const command = button.dataset.cmd!;
-      button.hidden = reading;
+      button.hidden = false;
       button.disabled = command === "undo" ? !history.undo : command === "redo" ? !history.redo : reading;
       const active = live() && !!states[command] && editor().isActive(states[command]);
       button.classList.toggle("on", active);

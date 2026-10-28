@@ -17,6 +17,9 @@ exports.run = async () => {
     if (fs.existsSync(commandPath)) {
       const command = JSON.parse(fs.readFileSync(commandPath, "utf8")); fs.unlinkSync(commandPath);
       if (command.type === "stop") return;
+      if (command.type === "language") {
+        await vscode.workspace.getConfiguration("karacaMd").update("language", command.language, vscode.ConfigurationTarget.Global);
+      }
       if (command.type === "reopen") {
         await vscode.commands.executeCommand("workbench.action.closeActiveEditor");
         await open();
