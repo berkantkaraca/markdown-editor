@@ -6,6 +6,7 @@ import { highlightCode } from "./code-highlight";
 import katex from "katex";
 import texmath from "markdown-it-texmath";
 import { parseFrontmatter, renderFrontmatterHtml, parseWikilink, escapeHtml } from "./md-utils";
+import { preserveBlankLines } from "./markdown-blank-lines";
 
 export interface MdPipeline {
   md: InstanceType<typeof MarkdownIt>;
@@ -14,7 +15,7 @@ export interface MdPipeline {
   renderFullWithFm(text: string): string;
 }
 
-export function createMarkdown(config: { sourceMap?: boolean } = {}): InstanceType<typeof MarkdownIt> {
+export function createMarkdown(config: { sourceMap?: boolean; preserveBlankLines?: boolean } = {}): InstanceType<typeof MarkdownIt> {
   const md = new MarkdownIt({
     html: true,
     linkify: true,
@@ -93,6 +94,7 @@ export function createMarkdown(config: { sourceMap?: boolean } = {}): InstanceTy
       };
     }
   }
+  if (config.preserveBlankLines) preserveBlankLines(md,!!config.sourceMap);
   return md;
 }
 
@@ -116,7 +118,7 @@ export function renderFullWithFmWith(md: InstanceType<typeof MarkdownIt>, text: 
 }
 
 export function createMdPipeline(config: { sourceMap?: boolean } = {}): MdPipeline {
-  const md = createMarkdown(config);
+  const md = createMarkdown({...config,preserveBlankLines:true});
   return {
     md,
     renderWikilinks: (src) => renderWikilinksWith(md, src),

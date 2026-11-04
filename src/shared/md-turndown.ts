@@ -1,22 +1,51 @@
 import { decodeSource } from "./md-utils";
+import { EMPTY_PARAGRAPH, markdownWhitespace } from "./blank-paragraphs";
 // HTML -> markdown çevirisi (tek-yüzey canlı düzenleme + kopyalama için).
 // DOM bağımsız kurulum; düğümler çağrı yerinde verilir (e2e ile test edilir).
 import TurndownService from "turndown";
 import { gfm } from "turndown-plugin-gfm";
 
-export function createTurndown(): TurndownService {
+export function createTurndown(options: { preserveEmptyMarkers?: boolean } = {}): TurndownService {
   const td = new TurndownService({
     headingStyle: "atx",
     bulletListMarker: "-",
     codeBlockStyle: "fenced",
     emDelimiter: "*",
     strongDelimiter: "**",
-    // Plain Markdown blank lines separate paragraphs but cannot represent an
-    // empty paragraph. Keep an explicit HTML paragraph so Enter survives save.
+    // Keep empty paragraphs distinct during conversion, then write blank lines.
     blankReplacement: (_content, node) => node.nodeName === "P" && !node.closest("td,th")
-      ? "\n\n<p></p>\n\n" : (node as HTMLElement & { isBlock?: boolean }).isBlock ? "\n\n" : "",
+      ? `\n\n${EMPTY_PARAGRAPH}\n\n` : (node as HTMLElement & { isBlock?: boolean }).isBlock ? "\n\n" : "",
   });
   td.use(gfm);
+  td.addRule("markdown-table", {
+    filter: "table",
+    replacement: (_content,node) => {
+      const table = node as HTMLTableElement;
+      const rows: string[][] = [], occupied: number[] = [];
+      for (const row of Array.from(table.rows)) {
+        const cells: string[] = []; let column = 0;
+        for (const cell of Array.from(row.cells)) {
+          while (occupied[column] > 0) { cells[column] = ""; occupied[column]--; column++; }
+          const clean = cell.cloneNode(true) as HTMLElement;
+          clean.querySelectorAll("br").forEach(br => br.replaceWith(" / "));
+          clean.querySelectorAll("span,font,u,sub,sup,small,ins,mark").forEach(element => element.replaceWith(...Array.from(element.childNodes)));
+          const value = markdownWhitespace(td.turndown(clean.innerHTML)).trim().replace(/\s*\n+\s*/g," / ").replace(/(?<!\\)\|/g,"\\|");
+          const colspan = Math.max(1,Math.min(100,cell.colSpan)), rowspan = Math.max(1,Math.min(100,cell.rowSpan));
+          for (let i=0;i<colspan;i++) { cells[column] = i === 0 ? value : ""; occupied[column] = rowspan-1; column++; }
+        }
+        while (column < occupied.length) { if(occupied[column]>0) {cells[column]="";occupied[column]--;} column++; }
+        rows.push(cells);
+      }
+      if (!rows.length) return "";
+      const width = Math.max(...rows.map(row=>row.length));
+      const format = (row: string[]) => `| ${Array.from({length:width},(_value,i)=>row[i] || "").join(" | ")} |`;
+      const hasHeader = Array.from(table.rows[0].cells).some(cell=>cell.tagName==="TH");
+      const header = hasHeader ? rows.shift()! : [];
+      const alignment = Array.from(table.rows[0].cells).flatMap(cell=>Array(Math.max(1,Math.min(100,cell.colSpan))).fill(cell.style.textAlign || cell.getAttribute("align") || ""));
+      const separator = Array.from({length:width},(_value,i)=>alignment[i]==="center" ? ":---:" : alignment[i]==="right" ? "---:" : alignment[i]==="left" ? ":---" : "---");
+      return `\n\n${[format(header),format(separator),...rows.map(format)].join("\n")}\n\n`;
+    },
+  });
 
   // The upstream GFM plugin emits single tildes, which our Markdown parser
   // treats as literal text. Use the standard double-delimiter spelling.
@@ -29,7 +58,7 @@ export function createTurndown(): TurndownService {
     replacement: (content, node) => {
       const el = node as HTMLElement;
       const first = el.parentElement?.firstElementChild === el;
-      const text = content.trim().replace(/\n+/g, "<br>").replace(/(?<!\\)\|/g, "\\|");
+      const text = content.trim().replace(/\n+/g, " / ").replace(/(?<!\\)\|/g, "\\|");
       return `${first ? "| " : " "}${text} |`;
     },
   });
@@ -137,6 +166,10 @@ export function createTurndown(): TurndownService {
     replacement: (content) => content,
   });
 
+  if (!options.preserveEmptyMarkers) {
+    const convert = td.turndown.bind(td);
+    td.turndown = input => markdownWhitespace(convert(input));
+  }
   return td;
 }
 

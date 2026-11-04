@@ -4,12 +4,15 @@ import type { EditorView } from "@codemirror/view";
 import { editTable, setHeadingLevel, togglePrefix, toggleTaskLine } from "../shared/md-utils";
 import type { TableOp } from "../shared/md-utils";
 import { createTablePicker } from "./table-picker";
+import { selectedRect } from "@tiptap/pm/tables";
+import { tableActions, runTableAction, tableActionPanel, type TableMenuItem } from "./table-actions";
 
 interface FormatDeps {
   getMode(): string;
   getEditor(): Editor;
   getSource(): EditorView;
   insertSpecial(kind: "math" | "mermaid"): void;
+  pickImage(done: (file: string) => void): void;
   undo(): void;
   redo(): void;
   history(): { undo: boolean; redo: boolean };
@@ -20,7 +23,8 @@ export function attachFormatbar(deps: FormatDeps) {
   const bar = document.getElementById("formatbar")!;
   const buttons = Array.from(bar.querySelectorAll<HTMLButtonElement>("button[data-cmd]"));
   let popup: HTMLElement | null = null;
-  const close = () => { popup?.remove(); popup = null; };
+  let cleanupPopup = () => {};
+  const close = () => { cleanupPopup(); cleanupPopup = () => {}; popup?.remove(); popup = null; };
   const live = () => deps.getMode() === "live";
   const source = () => deps.getSource();
   const editor = () => deps.getEditor();
@@ -92,7 +96,7 @@ export function attachFormatbar(deps: FormatDeps) {
     });
     popup.querySelector("button")?.focus();
   }
-  function dialog(kind: "link" | "image") {
+  function dialog(kind: "link" | "image", anchor: HTMLElement) {
     close();
     const targetLive = live();
     const selection = targetLive ? editor().state.selection.getBookmark() : source().state.selection.main;
@@ -106,6 +110,16 @@ export function attachFormatbar(deps: FormatDeps) {
       const input = document.createElement("input"); input.value = value; label.appendChild(input); popup!.appendChild(label); return input;
     });
     const row = document.createElement("div"); row.className = "kdialog-row";
+    if (kind === "image") {
+      const form = popup;
+      const browse = document.createElement("button"); browse.type = "button"; browse.className = "image-browse";
+      browse.textContent = t("Dosyadan seç…");
+      browse.onclick = () => {
+        browse.disabled = true;
+        deps.pickImage(file => { browse.disabled = false; if (popup === form && file) { fields[1].value = file; fields[0].focus(); } });
+      };
+      row.appendChild(browse);
+    }
     const cancel = document.createElement("button"); cancel.type = "button"; cancel.textContent = t("Vazgeç"); cancel.onclick = close;
     const ok = document.createElement("button"); ok.type = "submit"; ok.textContent = t("Ekle"); ok.className = "primary";
     row.append(cancel, ok); popup.appendChild(row);
@@ -125,7 +139,19 @@ export function attachFormatbar(deps: FormatDeps) {
         source().dispatch({ changes: { from: range.from, to: range.to, insert: snippet } }); source().focus();
       }
     });
-    document.body.appendChild(popup); fields[1].focus(); fields[1].select();
+    const form = popup;
+    const position = () => {
+      const button = anchor.getBoundingClientRect(), box = form.getBoundingClientRect();
+      const below = button.bottom + 6;
+      const top = below + box.height <= window.innerHeight - 8 ? below
+        : button.top - box.height - 6 >= 8 ? button.top - box.height - 6 : window.innerHeight - box.height - 8;
+      form.style.left = `${Math.max(8, Math.min(button.left, window.innerWidth - box.width - 8))}px`;
+      form.style.top = `${Math.max(8, top)}px`;
+    };
+    document.body.appendChild(form); position();
+    window.addEventListener("resize", position);
+    cleanupPopup = () => window.removeEventListener("resize", position);
+    fields[1].focus({ preventScroll: true }); fields[1].select();
   }
 
   function pickTable(anchor: HTMLElement) {
@@ -152,6 +178,43 @@ export function attachFormatbar(deps: FormatDeps) {
     document.body.appendChild(popup); popup.querySelector<HTMLElement>('[tabindex="0"]')?.focus();
   }
 
+  function tableMenu(anchor: HTMLElement) {
+    const inTable = live() ? editor().isActive("table") : source().state.doc.lineAt(source().state.selection.main.head).text.trim().startsWith("|");
+    if(!inTable) {pickTable(anchor);return;}
+    close();
+    const bookmark=live() ? editor().state.selection.getBookmark() : null;
+    const restore=()=>{if(bookmark)editor().view.dispatch(editor().state.tr.setSelection(bookmark.resolve(editor().state.doc)));};
+    let description=t("Satır ve sütun işlemleri");
+    let items:TableMenuItem[];
+    if(live()) {
+      const rect=selectedRect(editor().state);description=`${rect.map.height} ${t("satır")} × ${rect.map.width} ${t("sütun")}`;
+      items=tableActions.map(item=>({...item,run:()=>{restore();runTableAction(editor(),item.action);close();refreshBar();}}));
+    } else {
+      const labels=["Sona satır ekle","Son satırı sil","Sona sütun ekle","Son sütunu sil"];
+      items=(["add-row","del-row","add-col","del-col"] as TableOp[]).map((operation,index)=>({label:labels[index],icon:index<2?"row":"column",group:index%2?"Sil":"Ekle",run:()=>{table(operation);close();refreshBar();}}));
+    }
+    items.push({label:"Yeni tablo…",icon:"table",group:"Tablo",run:()=>{restore();pickTable(anchor);}});
+    popup=tableActionPanel(items,description);
+    const panel=popup; let anchorRect=anchor.getBoundingClientRect();
+    const position=()=>{
+      const latest=anchor.getBoundingClientRect(); if(latest.width>0)anchorRect=latest;
+      const rect=anchorRect,box=panel.getBoundingClientRect();
+      panel.style.left=`${Math.max(8,Math.min(rect.left,window.innerWidth-box.width-8))}px`;
+      panel.style.top=`${Math.max(8,Math.min(rect.bottom+6,window.innerHeight-box.height-8))}px`;
+    };
+    document.body.append(panel);position();window.addEventListener("resize",position);
+    cleanupPopup=()=>window.removeEventListener("resize",position);
+    panel.addEventListener("keydown",event=>{
+      const choices=Array.from(panel.querySelectorAll<HTMLButtonElement>("button"));
+      if(event.key==="Escape"){event.preventDefault();close();anchor.focus();return;}
+      if(!["ArrowDown","ArrowUp","Home","End"].includes(event.key))return;
+      event.preventDefault();const index=choices.indexOf(document.activeElement as HTMLButtonElement);
+      const next=event.key==="Home"?0:event.key==="End"?choices.length-1:(index+(event.key==="ArrowDown"?1:-1)+choices.length)%choices.length;
+      choices[next]?.focus();
+    });
+    panel.querySelector("button")?.focus({preventScroll:true});
+  }
+
   function run(command: string, anchor: HTMLElement) {
     if (command === "undo") return deps.undo();
     if (command === "redo") return deps.redo();
@@ -163,14 +226,8 @@ export function attachFormatbar(deps: FormatDeps) {
         if (live()) editor().chain().focus().setParagraph().run(); else lines((line) => line.replace(/^#{1,6}\s+/, ""));
       } }]); return;
     }
-    if (command === "table-menu") {
-      const inTable = live() ? editor().isActive("table") : source().state.doc.lineAt(source().state.selection.main.head).text.trim().startsWith("|");
-      if (!inTable) { pickTable(anchor); return; }
-      menu(anchor, [{ label: t("Yeni tablo…"), run: () => { setTimeout(() => pickTable(anchor), 0); } }, ...(["add-row", "del-row", "add-col", "del-col"] as TableOp[]).map((operation, i) => ({
-        label: [t("+ Satır"), t("− Satır"), t("+ Sütun"), t("− Sütun")][i], run: () => table(operation),
-      }))]); return;
-    }
-    if (command === "link" || command === "image") return dialog(command);
+    if (command === "table-menu") { tableMenu(anchor); return; }
+    if (command === "link" || command === "image") return dialog(command, anchor);
     if (command === "math" || command === "mermaid") {
       if (live()) deps.insertSpecial(command);
       else insert(command === "math" ? "$$x^2$$" : "\n```mermaid\nflowchart LR\n    A --> B\n```\n");
@@ -236,5 +293,5 @@ export function attachFormatbar(deps: FormatDeps) {
     if (popup && !popup.contains(event.target as Node) && !(event.target as HTMLElement).closest("[data-cmd]")) close();
   });
   document.addEventListener("keydown", (event) => { if (event.key === "Escape") close(); });
-  return { refreshBar, close };
+  return { refreshBar, close, tableMenu };
 }

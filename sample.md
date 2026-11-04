@@ -40,7 +40,21 @@ Bu paragrafta **kalın metin**, *italik metin*, ***kalın ve italik metin***, ~~
         
     -   Deveci armudu
         
--   Muz
+-   Muza
+
+
+
+## 4\. Tablolar (Tables)
+
+| Dil / Teknoloji | Kategori | Seviye |
+| :--- | :---: | ---: |
+| Java / Spring Boot | Backend | İleri |
+| TypeScript / Angular | Frontend | Orta |
+| PostgreSQL / Redis | Veritabanı | İleri |
+
+* * *
+
+## 5\. Kod Blokları (Code Blocks)
 
 ### Sıralı Liste (Ordered List)
 
@@ -58,7 +72,11 @@ Bu paragrafta **kalın metin**, *italik metin*, ***kalın ve italik metin***, ~~
 
 ## 4\. Tablolar (Tables)
 
-<table style="min-width: 75px;"><colgroup><col style="min-width: 25px;"><col style="min-width: 25px;"><col style="min-width: 25px;"></colgroup><tbody><tr><th style="text-align: left;"><p>Dil / Teknoloji</p></th><th style="text-align: center;"><p>Kategori</p></th><th style="text-align: right;"><p>Seviye</p></th></tr><tr><td style="text-align: left;"><p>Java / Spring Boot</p></td><td style="text-align: center;"><p>Backend</p></td><td style="text-align: right;"><p>İleri</p></td></tr><tr><td style="text-align: left;"><p>TypeScript / Angular</p></td><td style="text-align: center;"><p>Frontend</p></td><td style="text-align: right;"><p>Orta</p></td></tr><tr><td style="text-align: left;"><p>PostgreSQL / Redis</p></td><td style="text-align: center;"><p>Veritabanı</p></td><td style="text-align: right;"><p>İleri</p></td></tr></tbody></table>
+| Dil / Teknoloji | Kategori | Seviye |
+| :--- | :---: | ---: |
+| Java / Spring Boot | Backend | İleri |
+| TypeScript / Angular | Frontend | Orta |
+| PostgreSQL / Redis | Veritabanı | İleri |
 
 * * *
 
@@ -76,4 +94,3 @@ Bu paragrafta **kalın metin**, *italik metin*, ***kalın ve italik metin***, ~~
 }
 ```
 
-<p></p>

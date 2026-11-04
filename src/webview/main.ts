@@ -6,13 +6,17 @@ import { SourceEditor } from "./source-editor";
 import { DocumentSync, type LocalDraft, type SyncState } from "./document-sync";
 import { renderPreview, runMermaid, refreshDiagrams } from "./preview";
 import { attachFormatbar } from "./format";
+import { attachTableHover } from "./table-hover";
 import { attachFindbar } from "./search";
 import { createPoster, PROTO } from "./protocol";
-import { parseHeadings } from "../shared/md-utils";
+import { createMarkdown } from "../shared/md-pipeline";
+import { parseFrontmatter, parseHeadings } from "../shared/md-utils";
+import { decorateGitPreview } from "./git-markers";
+import { scrollKey, captureScroll, applyScroll, cancelScroll, type ScrollSurface, type ScrollPosition } from "./comparison-scroll";
 
 declare function acquireVsCodeApi(): {
   postMessage(message: unknown): void;
-  getState(): { mode?: Mode; recoveryDraft?: string; draft?: LocalDraft } | undefined;
+  getState(): { mode?: Mode; recoveryDraft?: string; draft?: LocalDraft; scrollOffsets?: Record<string, number> } | undefined;
   setState(state: unknown): void;
 };
 type Mode = "live" | "source" | "split" | "reading";
@@ -25,12 +29,15 @@ let configured = false;
 let saveAfterComposition = false;
 const compositionMessages: any[] = [];
 let wrap = true, numbers = true;
-let syncingScroll = false;
+
 let previewTimer: ReturnType<typeof setTimeout>;
 let imageSequence = 0;
 let syncState: SyncState = "idle";
 const images = new Map<string, string>();
 const pendingImages = new Map<string, "live" | "source">();
+const pendingPlainPastes = new Set<string>();
+let plainPasteSequence = 0;
+const imagePickers = new Map<string, (file: string) => void>();
 const liveRoot = $("live-root"), readingRoot = $("reading-root"), splitRoot = $("split-root");
 function updateLanguage(language: unknown): void {
   setLanguage(language);
@@ -41,7 +48,15 @@ function updateLanguage(language: unknown): void {
 }
 updateLanguage("en");
 let toolbar: ReturnType<typeof attachFormatbar> | undefined;
+let tableHover: ReturnType<typeof attachTableHover> | undefined;
 let find: ReturnType<typeof attachFindbar> | undefined;
+let gitBase: string | null = null;
+let gitTimer: ReturnType<typeof setTimeout>;
+function refreshGit(): void {
+  if (mode === "live") rich.refreshGit();
+  if (mode === "reading") decorateGitPreview(readingRoot, gitBase, sync.text);
+  if (mode === "split") decorateGitPreview(splitRoot, gitBase, sync.text);
+}
 
 const sync = new DocumentSync({
   send: post,
@@ -51,6 +66,7 @@ const sync = new DocumentSync({
       else source.load(text);
     }
     schedulePreview();
+    clearTimeout(gitTimer); gitTimer = setTimeout(refreshGit, 180);
     toolbar?.refreshBar();
   },
   status: (dirty) => { $("dirty").textContent = dirty ? "●" : ""; },
@@ -87,11 +103,16 @@ const source = new SourceEditor($("cm-host"), (text) => { sync.edit(text); toolb
 toolbar = attachFormatbar({
   getMode: () => mode, getEditor: () => rich.editor, getSource: () => source.view,
   insertSpecial: (kind) => rich.insertSpecial(kind),
+  pickImage: (done) => {
+    const nonce = `pick-${Date.now()}-${++imageSequence}`;
+    imagePickers.set(nonce, done); post({ type: "pick-image", nonce });
+  },
   undo: () => { if (mode === "live") rich.editor.commands.undo(); else source.undo(); toolbar?.refreshBar(); },
   redo: () => { if (mode === "live") rich.editor.commands.redo(); else source.redo(); toolbar?.refreshBar(); },
   history: () => mode === "live" ? { undo: rich.editor.can().undo(), redo: rich.editor.can().redo() }
     : { undo: source.canUndo, redo: source.canRedo },
 });
+tableHover = attachTableHover(rich.editor,()=>mode,anchor=>toolbar?.tableMenu(anchor));
 find = attachFindbar({
   getMode: () => mode,
   getText: () => sync.text,
@@ -128,11 +149,13 @@ function refreshPreview(): void {
   const root = mode === "reading" ? readingRoot : mode === "split" ? splitRoot : null;
   if (!root) return;
   renderPreview(root, sync.text);
+  decorateGitPreview(root, gitBase, sync.text);
   resolveImages(root);
   if (find?.isOpen()) find.refresh();
 }
 function setMode(next: Mode): void {
   toolbar?.close();
+  tableHover?.hide();
   find?.closeFind();
   rich.flush();
   sync.flush();
@@ -163,7 +186,7 @@ function setMode(next: Mode): void {
     resolveImages(liveRoot);
     void runMermaid(liveRoot);
   } else if (next === "source" || next === "split") source.load(sync.text);
-  refreshPreview(); toolbar?.refreshBar();
+  refreshPreview(); refreshGit(); toolbar?.refreshBar();
 }
 for (const name of ["source", "live", "split", "reading"] as Mode[]) {
   $("btn-" + name).addEventListener("click", () => setMode(name));
@@ -234,20 +257,112 @@ for (const root of [readingRoot, splitRoot]) root.addEventListener("click", (eve
   const wiki = link.getAttribute("data-wikilink");
   post(wiki ? { type: "open-wikilink", name: wiki } : { type: "open-link", href: link.getAttribute("href") || "" });
 });
-function scrollTogether(from: HTMLElement, to: HTMLElement): void {
-  if (mode !== "split" || syncingScroll) return;
-  const max = from.scrollHeight - from.clientHeight;
-  if (max <= 0) return;
-  syncingScroll = true;
-  to.scrollTop = from.scrollTop / max * Math.max(0, to.scrollHeight - to.clientHeight);
-  requestAnimationFrame(() => { syncingScroll = false; });
+const previewSurface = (container: HTMLElement, root: HTMLElement): ScrollSurface => ({ container, blocks: () =>
+  Array.from(root.children).flatMap(element => {
+    const range = element.getAttribute("data-md-range"); if (!range) return [];
+    const [from,to] = range.split(":").map(Number), rect = element.getBoundingClientRect();
+    return [{key: scrollKey(sync.text.slice(from,to)), top: rect.top, height: rect.height}];
+  }) });
+const liveSurface: ScrollSurface = {container: $("live-wrap"), blocks: () => rich.scrollRanges().map(range => {
+  const rect = range.element.getBoundingClientRect();
+  return { key: scrollKey(sync.text.slice(range.from,range.to)), top: rect.top, height: rect.height };
+})};
+const scrollMarkdown = createMarkdown({sourceMap:true});
+let scrollSourceText: string | undefined, scrollSourceRanges: {from:number;to:number;key:string}[] = [];
+function sourceScrollRanges(text: string) {
+  if(text === scrollSourceText) return scrollSourceRanges;
+  scrollSourceText = text;
+  const fm = parseFrontmatter(text), rest = fm ? text.split("\n").slice(fm.endLine).join("\n") : text;
+  const offset = text.length-rest.length;
+  scrollSourceRanges = offset ? [{from:0,to:offset,key:scrollKey(text.slice(0,offset))}] : [];
+  for(const token of scrollMarkdown.parse(rest,{sourceOffset:offset})) {
+    const range=token.attrGet("data-md-range"); if(!range)continue;
+    const [from,to]=String(range).split(":").map(Number);
+    scrollSourceRanges.push({from,to,key:scrollKey(text.slice(from,to))});
+  }
+  return scrollSourceRanges;
 }
-source.view.scrollDOM.addEventListener("scroll", () => scrollTogether(source.view.scrollDOM, $("split-preview")));
-$("split-preview").addEventListener("scroll", () => scrollTogether($("split-preview"), source.view.scrollDOM));
+const sourceSurface: ScrollSurface = {container: source.view.scrollDOM, blocks: () => {
+  const text = source.view.state.doc.toString(), blocks = [];
+  for (const range of sourceScrollRanges(text)) {
+    const first = source.view.lineBlockAt(range.from), last = source.view.lineBlockAt(Math.max(range.from,range.to-1));
+    blocks.push({key: range.key, top: source.view.documentTop+first.top, height: last.bottom-first.top});
+  }
+  return blocks;
+}};
+const splitSurface = previewSurface($("split-preview"),splitRoot), readingSurface = previewSurface($("reading-wrap"),readingRoot);
+const activeSurfaces = () => mode === "live" ? [liveSurface] : mode === "reading" ? [readingSurface] : mode === "source" ? [sourceSurface] : [sourceSurface,splitSurface];
+let scrollFrame = 0;
+const expectedScroll = new WeakMap<HTMLElement,number>();
+const allSurfaces = [liveSurface,sourceSurface,splitSurface,readingSurface];
+const scrollOffsets = { ...vscode.getState()?.scrollOffsets };
+let receivedDocument = false;
+let restoreFrame = 0;
+function scrollPaneKey(surface: ScrollSurface): string {
+  return surface === sourceSurface ? `${mode}-source` : surface.container.id;
+}
+function restoreScrollOffsets(): void {
+  if (!activeSurfaces().some(surface => scrollOffsets[scrollPaneKey(surface)] > 0)) return;
+  // Preview and CodeMirror must lay out the received document before scrolling.
+  clearTimeout(previewTimer);
+  refreshPreview();
+  const restoreMode = mode;
+  restoreFrame = requestAnimationFrame(() => {
+    restoreFrame = requestAnimationFrame(() => {
+      restoreFrame = 0;
+      if (mode !== restoreMode) return;
+      for (const surface of activeSurfaces()) {
+        const top = scrollOffsets[scrollPaneKey(surface)];
+        if (!Number.isFinite(top) || top < 0) continue;
+        surface.container.scrollTop = top;
+        expectedScroll.set(surface.container, surface.container.scrollTop);
+      }
+    });
+  });
+}
+function moveSurface(surface: ScrollSurface, position: ScrollPosition): void {
+  applyScroll(surface,position,top => expectedScroll.set(surface.container,top));
+}
+function receiveScroll(position: ScrollPosition): void {
+  for (const surface of activeSurfaces()) moveSurface(surface,position);
+}
+for (const surface of allSurfaces) {
+  const container = surface.container;
+  const takeControl = () => {
+    cancelAnimationFrame(restoreFrame);
+    restoreFrame = 0;
+    cancelScroll(container);
+    expectedScroll.delete(container);
+  };
+  for (const event of ["wheel","pointerdown","touchstart","keydown"]) container.addEventListener(event,takeControl,{passive:true});
+  container.addEventListener("scroll", () => {
+    const expected = expectedScroll.get(container);
+    if (!receivedDocument || restoreFrame || !activeSurfaces().includes(surface)) return;
+    const key = scrollPaneKey(surface);
+    if (scrollOffsets[key] !== container.scrollTop) {
+      scrollOffsets[key] = container.scrollTop;
+      vscode.setState({ ...vscode.getState(), scrollOffsets });
+    }
+    if (expected !== undefined && Math.abs(container.scrollTop-expected)<1) return;
+    if(scrollFrame) cancelAnimationFrame(scrollFrame);
+    scrollFrame = requestAnimationFrame(() => {
+      scrollFrame=0;
+      const position = captureScroll(surface);
+      for (const other of activeSurfaces()) if(other!==surface) moveSurface(other,position);
+      post({type:"scroll-sync",position});
+    });
+  });
+}
 
 document.addEventListener("keydown", (event) => {
   if (!(event.ctrlKey || event.metaKey)) return;
-  if (event.key.toLowerCase() === "s") { event.preventDefault(); if (rich.flush()) sync.save(); else saveAfterComposition = true; }
+  if (event.key.toLowerCase() === "v" && event.shiftKey && mode === "live" && rich.editor.view.hasFocus() && !rich.composing) {
+    event.preventDefault(); event.stopImmediatePropagation();
+    const nonce = `plain-paste-${++plainPasteSequence}`;
+    rich.bookmark(nonce); pendingPlainPastes.add(nonce); post({type:"read-clipboard-text",nonce});
+    return;
+  }
+  if (event.key.toLowerCase() === "s") { event.preventDefault(); if (mode === "live" ? rich.prepareSave() : rich.flush()) sync.save(); else saveAfterComposition = true; }
   if (event.key.toLowerCase() === "f" && !event.defaultPrevented && mode !== "source" && !(mode === "split" && source.view.hasFocus)) {
     event.preventDefault(); find?.openFind();
   }
@@ -256,11 +371,19 @@ window.addEventListener("blur", () => { rich.flush(); sync.flush(); });
 window.addEventListener("message", (event) => {
   const message = event.data;
   if (!message || (message.proto !== undefined && message.proto !== PROTO)) return;
-  if (["update", "edit-result", "save-result"].includes(message.type) && rich.composing) { compositionMessages.push(message); return; }
+  if (["update", "edit-result", "save-result", "git-baseline"].includes(message.type) && rich.composing) { compositionMessages.push(message); return; }
   if (typeof message.session === "string" && message.session !== sync.session) return;
-  if (message.type === "update" && typeof message.text === "string" && typeof message.version === "number") {
+  if (message.type === "clipboard-text" && pendingPlainPastes.delete(message.nonce)) {
+    rich.pastePlainText(message.nonce,mode === "live" && typeof message.text === "string" ? message.text : "");
+  } else if (message.type === "scroll-sync" && message.position) {
+    receiveScroll(message.position);
+  } else if (message.type === "update" && typeof message.text === "string" && typeof message.version === "number") {
     rich.flush();
     sync.receive(message);
+    if (!receivedDocument) {
+      receivedDocument = true;
+      restoreScrollOffsets();
+    }
     resolveImages(liveRoot); void runMermaid(liveRoot);
     if (vscode.getState()?.recoveryDraft === sync.text) {
       $("recovery-draft")?.remove(); vscode.setState({ ...vscode.getState(), recoveryDraft: undefined });
@@ -271,6 +394,9 @@ window.addEventListener("message", (event) => {
     resolveImages(liveRoot);
   } else if (message.type === "save-result") {
     rich.flush(); sync.saved(message.requestId, message, !!message.success);
+  } else if (message.type === "git-baseline") {
+    gitBase = typeof message.text === "string" ? message.text : null;
+    source.setGitBaseline(gitBase); rich.setGitBaseline(gitBase); refreshGit();
   } else if (message.type === "draft-state") {
     const draft = message.draft as LocalDraft | null;
     const local = vscode.getState()?.draft;
@@ -278,13 +404,16 @@ window.addEventListener("message", (event) => {
   } else if (message.type === "config") {
     toolbar?.close();
     document.querySelector<HTMLDialogElement>(".source-dialog")?.close();
-    updateLanguage(message.language);
+    updateLanguage(message.language); tableHover?.refresh();
     if (find?.isOpen()) find.refresh();
     rich.editor.view.dom.setAttribute("aria-label", t("Belge düzenleyici"));
     const recovery = vscode.getState()?.recoveryDraft;
     if (recovery !== undefined) showRecovery(recovery);
     wrap = message.wordWrap !== false; numbers = message.lineNumbers !== false; theme();
     if (!configured) { setMode(vscode.getState()?.mode || (validMode(message.defaultMode) ? message.defaultMode : "live")); configured = true; }
+  } else if (message.type === "image-picked") {
+    const done = imagePickers.get(message.nonce); imagePickers.delete(message.nonce);
+    done?.(typeof message.path === "string" ? message.path : "");
   } else if (message.type === "img-saved") {
     const target = pendingImages.get(message.nonce); pendingImages.delete(message.nonce);
     if (!target || !message.path) return;
@@ -294,6 +423,8 @@ window.addEventListener("message", (event) => {
       if (mode === "live") rich.load(sync.text);
     }
     resolveImages(liveRoot);
+  } else if (message.type === "images-restored") {
+    images.clear(); for (const root of [liveRoot, readingRoot, splitRoot]) resolveImages(root);
   } else if (message.type === "img-uris") {
     for (const [path, uri] of Object.entries(message.map || {})) if (typeof uri === "string") images.set(path, uri);
     for (const root of [liveRoot, readingRoot, splitRoot]) resolveImages(root);
@@ -309,7 +440,7 @@ liveRoot.addEventListener("compositionend", () => {
   };
   setTimeout(drain, 0);
 });
-window.addEventListener("pagehide", () => { rich.flush(); sync.flush(); sync.dispose(); rich.destroy(); source.view.destroy(); });
+window.addEventListener("pagehide", () => { clearTimeout(gitTimer); cancelAnimationFrame(scrollFrame); for(const surface of allSurfaces) cancelScroll(surface.container); rich.flush(); sync.flush(); sync.dispose(); tableHover?.destroy(); rich.destroy(); source.view.destroy(); });
 theme(); setMode(mode);
 const recovery = vscode.getState()?.recoveryDraft ?? vscode.getState()?.draft?.text;
 if (recovery) showRecovery(recovery);

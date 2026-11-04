@@ -3,7 +3,7 @@ import { decodeSource } from "../shared/md-utils";
 import { t } from "./i18n";
 import DOMPurify from "dompurify";
 import { createMdPipeline } from "../shared/md-pipeline";
-const { renderFullWithFm } = createMdPipeline();
+const { renderFullWithFm } = createMdPipeline({ sourceMap: true });
 export function renderPreview(root: HTMLElement, text: string): void {
   root.innerHTML = DOMPurify.sanitize(renderFullWithFm(text));
   prepareTaskLists(root);

@@ -38,6 +38,7 @@ beforeEach(async () => {
       const rect = () => ({ left: 0, right: 0, top: 0, bottom: 0, width: 0, height: 0 });
       window.Range.prototype.getBoundingClientRect = rect;
       window.Range.prototype.getClientRects = () => [];
+      window.ClipboardEvent = window.Event;
       window.ResizeObserver = class { observe() {} unobserve() {} disconnect() {} };
     },
   });
@@ -52,6 +53,111 @@ beforeEach(async () => {
 afterEach(() => { app.rich.destroy(); app.source.view.destroy(); win.close(); });
 
 describe("belge motoru: tek yüzey", () => {
+  it("Canlı modda kaydet eski boş HTML paragraflarını ve tabloyu Markdown’a dönüştürür",()=>{
+    load('Başlangıç\n\n<p></p>\n\n<table style="width:100%"><tr><th>Ad</th></tr><tr><td>Değer</td></tr></table>\n\nSon');
+    app.rich.prepareSave();
+    assert.doesNotMatch(app.sync.text,/<(?:p|table|tr|td|th)\b/); assert.match(app.sync.text,/Başlangıç\n{4}\| Ad \|/);
+    assert.match(app.sync.text,/\| Değer \|/); assert.match(app.sync.text,/Son$/);
+  });
+  it("birden fazla boş satır Markdown olarak saklanır ve mod değiştirince geri gelir", async()=>{
+    load("Başlangıç\n\n## Son");
+    app.rich.editor.commands.setTextSelection(paragraphPosition("Başlangıç")+"Başlangıç".length);
+    for(let i=0;i<3;i++) app.rich.editor.commands.splitBlock();
+    app.rich.flush(); const saved=app.sync.text;
+    assert.doesNotMatch(saved,/<p>|empty-paragraph|\u0000/);
+    assert.equal(Array.from(root().querySelector(".tiptap").children).slice(0,4).filter((node:any)=>node.tagName==="P").length,4);
+    app.setMode("reading"); assert.equal(doc.querySelectorAll("#reading-root > p").length,4);
+    app.setMode("live"); assert.equal(Array.from(root().querySelector(".tiptap").children).slice(0,4).filter((node:any)=>node.tagName==="P").length,4);
+    select("Başlangıç");type("Değişti");app.rich.flush();
+    assert.ok(app.sync.text.endsWith(saved.slice("Başlangıç".length)));
+  });
+  it("yeni tablo kaynağı Markdown olur, hücre düzenlemesi HTML üretmez",async()=>{
+    load("Metin"); app.rich.editor.commands.setTextSelection(6);
+    app.rich.editor.commands.insertTable({rows:3,cols:2,withHeaderRow:false}); app.rich.flush();
+    assert.doesNotMatch(app.sync.text,/<(?:table|tr|td|p|col)/); assert.match(app.sync.text,/\| --- \| --- \|/);
+    const saved=app.sync.text; app.rich.load("temporary"); app.rich.load(saved);
+    assert.equal(root().querySelectorAll("table").length,1);
+    assert.equal(root().querySelectorAll("table tr").length,4);
+  });
+  it("Ctrl+Shift+V yalnızca istenen pano yanıtını seçili metne düz metin olarak yapıştırır", async () => {
+    load("Başlangıç seçili metin son.");
+    const position=paragraphPosition("Başlangıç")+"Başlangıç ".length;
+    app.rich.editor.commands.setTextSelection({from:position,to:position+"seçili metin".length}); app.rich.editor.view.focus();
+    key("v",{ctrlKey:true,shiftKey:true});
+    const request=posted.find(message=>message.type==="read-clipboard-text"); assert.ok(request);
+    send({type:"clipboard-text",nonce:"başka-istek",text:"YANLIŞ"});
+    assert.doesNotMatch(root().textContent,/YANLIŞ/);
+    send({type:"clipboard-text",nonce:request.nonce,text:"<b>düz metin</b>"});
+    app.rich.flush();
+    assert.equal(root().textContent,"Başlangıç <b>düz metin</b> son."); assert.equal(root().querySelectorAll("strong").length,0);
+    send({type:"clipboard-text",nonce:request.nonce,text:"TEKRAR"}); assert.doesNotMatch(root().textContent,/TEKRAR/);
+    app.rich.editor.commands.undo(); app.rich.flush(); assert.equal(app.sync.text,"Başlangıç seçili metin son.");
+  });
+  it("listenin son maddesinde yazmak önceki maddelerin kaynağını ve Git rengini değiştirmez", async () => {
+    const original = "# Listeler\n\n-   ~~Elma~~\n    \n-   Armut\n    \n    -   Yeşil elma\n        \n    -   Deveci armudu\n        \n-   Muz\n";
+    load(original); send({type:"git-baseline",text:original});
+    const position = paragraphPosition("Muz")+3;
+    app.rich.editor.commands.setTextSelection(position); type("a"); app.rich.flush(); await pause(220);
+    assert.equal(app.sync.text,original.replace("Muz","Muza"));
+    const marked=root().querySelectorAll(".git-modified");
+    assert.equal(marked.length,1); assert.equal(marked[0].tagName,"LI"); assert.equal(marked[0].textContent,"Muza");
+    app.setMode("source"); assert.equal(doc.querySelectorAll(".git-source-gutter .git-modified").length,1);
+    app.setMode("reading");
+    const reading=doc.querySelectorAll("#reading-root .git-modified"); assert.equal(reading.length,1); assert.equal(reading[0].tagName,"LI");
+    app.setMode("live"); app.rich.editor.commands.undo(); app.rich.flush(); await pause(220);
+    assert.equal(app.sync.text,original); assert.equal(root().querySelectorAll(".git-modified").length,0);
+  });
+  it("listenin sonuna Enter ile yeni madde eklemek önceki kaynak satırlarını korur", async () => {
+    const original="- Elma\n- Armut\n- Muz\n";
+    load(original); send({type:"git-baseline",text:original});
+    app.rich.editor.commands.setTextSelection(paragraphPosition("Muz")+3);
+    app.rich.editor.commands.splitListItem("listItem"); type("Yeni"); app.rich.flush(); await pause(220);
+    assert.ok(app.sync.text.startsWith(original)); assert.equal(root().querySelectorAll(".git-modified").length,0);
+    assert.equal(root().querySelectorAll("li.git-added").length,1);
+  });
+  it("Enter eski paragrafın kaynak satırlarını korur ve tüm modlarda yalnızca yeşil gösterir", async () => {
+    const original = "# Başlık\n\nEski paragrafın ilk satırı\nikinci satırı\nüçüncü satırı.\n";
+    load(original); send({type:"git-baseline",text:original});
+    app.rich.editor.commands.setTextSelection(app.rich.editor.state.doc.content.size-1);
+    app.rich.editor.commands.splitBlock(); type("Yeni paragraf.");
+    app.rich.editor.commands.splitBlock();
+    app.rich.flush(); await pause(220);
+    assert.ok(app.sync.text.startsWith(original));
+    assert.equal(root().querySelectorAll(".git-modified").length,0);
+    assert.ok(root().querySelector(".git-added"));
+    app.setMode("source"); assert.equal(doc.querySelectorAll(".git-source-gutter .git-modified").length,0);
+    app.setMode("reading"); assert.equal(doc.querySelectorAll("#reading-root .git-modified").length,0);
+    assert.ok(doc.querySelector("#reading-root .git-added"));
+  });
+  it("Git işaretleri belgeye yazılmaz; Canlı, Kaynak ve Okuma modlarında görünür", async () => {
+    const text = "# Başlık\n\nDeğişen paragraf.\n\nYeni paragraf.\n\nSon.";
+    load(text);
+    send({ type: "git-baseline", text: "# Başlık\n\nEski paragraf.\n\nSon." });
+    assert.equal(root().querySelectorAll(".git-modified").length, 1);
+    assert.equal(root().querySelectorAll(".git-added").length, 1);
+    assert.equal(app.sync.text, text); assert.equal(edits().length, 0);
+    app.setMode("source");
+    assert.ok(doc.querySelector(".git-source-gutter .git-modified"));
+    app.setMode("reading"); assert.ok(doc.querySelector("#reading-root .git-modified"));
+    app.setMode("live"); select("Son"); type("Son değişti"); app.rich.flush();
+    assert.doesNotMatch(app.sync.text, /git-modified|data-git-change|git-deleted-point/);
+    send({ type: "git-baseline", text: app.sync.text });
+    assert.equal(root().querySelectorAll(".git-modified,.git-added,.git-deleted-point").length, 0);
+    send({ type: "git-baseline", text: null }); assert.equal(doc.querySelector(".git-source-gutter"), null);
+    await pause(10);
+  });
+  it("dosyadan görsel seçer, seçimi korur; vazgeçince belge değişmez", () => {
+    select("Giriş"); button("image").click();
+    const browse = doc.querySelector(".image-browse"); browse.click();
+    const request = posted.find(message => message.type === "pick-image"); assert.ok(request);
+    send({ type: "image-picked", nonce: request.nonce, path: "" });
+    assert.equal(browse.disabled, false); assert.equal(doc.querySelectorAll(".kdialog input")[1].value, "");
+    browse.click(); const next = posted.filter(message => message.type === "pick-image").pop();
+    send({ type: "image-picked", nonce: next.nonce, path: "assets/img-20261030200056.png" });
+    doc.querySelector(".kdialog").dispatchEvent(new win.Event("submit", { cancelable: true }));
+    assert.equal(root().querySelector('img[src="assets/img-20261030200056.png"]').getAttribute("alt"), "Giriş");
+    button("undo").click(); assert.match(root().textContent, /Giriş paragrafı/);
+  });
   it("varsayılan dil İngilizce; Türkçe seçimi belgeyi değiştirmez", () => {
     send({ type: "config" });
     assert.equal(doc.documentElement.lang, "en");
@@ -75,7 +181,7 @@ describe("belge motoru: tek yüzey", () => {
     assert.equal(root().querySelectorAll('[contenteditable="true"]').length, 1);
     assert.equal(root().querySelectorAll(".block, textarea, .tablebar").length, 0);
     assert.equal(root().querySelector("h1").textContent, "Başlık");
-    assert.equal(doc.querySelector("#pkgmark").textContent, "paket-14");
+    assert.equal(doc.querySelector("#pkgmark").textContent, "paket-25");
   });
   it("odak kaybı kaynağı normalize etmez", async () => {
     load("Başlık\n======\n\n*   madde\n\n");
@@ -133,9 +239,35 @@ describe("belge motoru: tek yüzey", () => {
     checkbox.click(); await pause();
     assert.match(edits()[0].text, /\[x\] görev bir/);
   });
+  it("tam satır seçilip Delete basılınca satır kaldırılır ve tek geri almayla döner",()=>{
+    select("Ali");button("table-menu").click();doc.querySelector('.table-action-menu [aria-label="Satırı seç"]').click();
+    key("Delete");app.rich.flush();assert.equal(root().querySelectorAll("tr").length,1);assert.doesNotMatch(app.sync.text,/Ali/);
+    button("undo").click();assert.equal(root().querySelectorAll("tr").length,2);assert.match(root().textContent,/Ali/);
+  });
+  it("sütun seçilip Backspace basılınca yalnız o sütun kaldırılır",()=>{
+    select("Ali");button("table-menu").click();doc.querySelector('.table-action-menu [aria-label="Sütunu seç"]').click();
+    key("Backspace");app.rich.flush();assert.equal(root().querySelectorAll("tr").length,2);
+    assert.equal(root().querySelectorAll("td").length,1);assert.doesNotMatch(app.sync.text,/Ali/);assert.match(app.sync.text,/Yaş/);
+  });
+  it("tek hücre seçiliyken Delete tabloyu küçültmeden hücreyi temizler",()=>{
+    let cell=0;app.rich.editor.state.doc.descendants((node:any,position:number)=>{if(node.type.name==="tableCell"&&node.textContent==="Ali")cell=position;});
+    app.rich.editor.commands.setCellSelection({anchorCell:cell});key("Delete");app.rich.flush();
+    assert.equal(root().querySelectorAll("tr").length,2);assert.equal(root().querySelectorAll("td").length,2);assert.doesNotMatch(app.sync.text,/Ali/);
+  });
+  it("başlık satırını silince kalan ilk satır Markdown başlığı olur ve geri alınabilir",()=>{
+    select("Ad");button("table-menu").click();doc.querySelector('.table-action-menu [aria-label="Satırı seç"]').click();key("Delete");
+    assert.equal(root().querySelectorAll("tr").length,1);assert.equal(root().querySelectorAll("th").length,2);
+    app.rich.flush();const saved=app.sync.text;button("undo").click();assert.equal(root().querySelectorAll("tr").length,2);app.rich.load("temporary");app.rich.load(saved);assert.equal(root().querySelectorAll("tr").length,1);
+  });
+  it("tablo kısayolları satır/sütun ekler, tüm tablo seçimi Delete ile kaldırılır",()=>{
+    select("Ali");key("ArrowDown",{altKey:true,shiftKey:true});assert.equal(root().querySelectorAll("tr").length,3);
+    key("ArrowRight",{altKey:true,shiftKey:true});assert.equal(root().querySelectorAll("th").length,3);
+    button("table-menu").click();doc.querySelector('.table-action-menu [aria-label="Tabloyu seç"]').click();key("Delete");app.rich.flush();
+    assert.equal(root().querySelectorAll("table").length,0);assert.match(app.sync.text,/Giriş paragrafı/);assert.doesNotMatch(app.sync.text,/<table/);
+  });
   it("hücreye göre satır ekler, siler ve geri alır", () => {
     select("Ali"); button("table-menu").click();
-    doc.querySelectorAll(".kmenu button")[1].click();
+    doc.querySelector('.table-action-menu button[aria-label="Alta satır ekle"]').click();
     assert.equal(root().querySelectorAll("tr").length, 3);
     button("undo").click(); assert.equal(root().querySelectorAll("tr").length, 2);
   });
@@ -287,7 +419,7 @@ describe("görev listesi aktarımı", () => {
 
 
 describe("geniş HTML aktarımı", () => {
-  it("özel kapsayıcıları, stilleri, yorumları ve birleşik hücreleri korur", async () => {
+  it("özel HTML kaynağını korur, eski HTML tablosunu Markdown olarak yazar", async () => {
     const html = '<!-- kalıcı yorum -->\n\n<article class="note"><div data-note="özel"><span style="color:red">Kırmızı</span></div><dl><dt>Terim</dt><dd>Açıklama</dd></dl></article>\n\n<table><tr><th colspan="2">Birleşik</th></tr><tr><td>A</td><td>B</td></tr></table>\n\nSon';
     load(html);
     select("Son"); type("Düzenlendi"); await pause();
@@ -297,6 +429,7 @@ describe("geniş HTML aktarımı", () => {
     assert.ok(output.includes('data-note="özel"'));
     assert.ok(output.includes('style="color:red"'));
     assert.ok(output.includes('<dl><dt>Terim</dt><dd>Açıklama</dd></dl>'));
-    assert.ok(output.includes('colspan="2"'));
+    assert.ok(!output.includes("<table"));
+    assert.ok(output.includes("| Birleşik |"));
   });
 });

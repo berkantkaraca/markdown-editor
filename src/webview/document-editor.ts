@@ -1,4 +1,10 @@
 import { t } from "./i18n";
+import { richGitPlugin, richGitKey, gitTitle } from "./git-markers";
+import { characterChanges, changeForRange } from "../shared/git-diff";
+import { listSource } from "../shared/list-source";
+import { normalizeClipboardHTML, clipboardHasText } from "./clipboard-html";
+import { markdownWhitespace } from "../shared/blank-paragraphs";
+import { tableKeyDown } from "./table-actions";
 import { SourcePreserver } from "./source-preserver";
 import { openSourceDialog, type SpecialKind } from "./source-dialog";
 import { CodeHighlight } from "./code-highlight";
@@ -21,7 +27,7 @@ import { createTurndown } from "../shared/md-turndown";
 
 const pipeline = createMdPipeline({ sourceMap: true });
 const contentPipeline = createMdPipeline();
-const converter = createTurndown();
+const converter = createTurndown({ preserveEmptyMarkers: true });
 const findKey = new PluginKey<DecorationSet>("documentFind");
 
 converter.addRule("preserved-source", {
@@ -113,7 +119,7 @@ function importMarkdown(text: string, sourceMap = false): string {
   // objects, rather than silently dropping them when another paragraph changes.
   host.querySelectorAll("details, summary, u, sub, sup, kbd, abbr, small, ins, mark, time, span[style], span[class], article, section, aside, header, footer, nav, figure, figcaption, address, dl, dt, dd, video, audio, picture, div, table").forEach((el) => {
     if (!host.contains(el) || el.closest("pre,code,[data-md-source]")) return;
-    if (el.tagName === "TABLE" && !el.querySelector("[colspan],[rowspan],[style]") && el.querySelector("tr")?.querySelector("th")) return;
+    if (el.tagName === "TABLE") return;
     const wrapper = document.createElement(el.matches("details,summary,article,section,aside,header,footer,nav,figure,figcaption,address,dl,dt,dd,video,audio,picture,div,table") ? "div" : "span");
     const clean = el.cloneNode(true) as HTMLElement;
     clean.removeAttribute("data-md-range");
@@ -161,6 +167,7 @@ export class DocumentEditor {
   private bookmarks = new Map<string, SelectionBookmark>();
   private matches: { from: number; to: number }[] = [];
   private query: RegExp | null = null;
+  private gitBase: string | null = null;
   private activeMatch = 0;
 
   constructor(private readonly options: DocumentEditorOptions) {
@@ -168,6 +175,7 @@ export class DocumentEditor {
       element: options.element,
       injectCSS: false,
       extensions: [
+        Extension.create({ name: "gitChanges", addProseMirrorPlugins: () => [richGitPlugin()] }),
         StarterKit.configure({ link: { openOnClick: false }, underline: false, codeBlock: { HTMLAttributes: { class: "hljs" } } }),
         TableKit.configure({ table: { resizable: false } }),
         TaskList, TaskItem.configure({ nested: true, HTMLAttributes: { "data-type": "taskItem" } }), DocumentImage,
@@ -199,15 +207,24 @@ export class DocumentEditor {
         }),
       ],
       editorProps: {
+        handleKeyDown: (_view,event) => tableKeyDown(this.editor,event),
+        transformPastedHTML: normalizeClipboardHTML,
         clipboardTextSerializer: (slice) => {
           const container = document.createElement("div");
           container.appendChild(DOMSerializer.fromSchema(this.editor.schema).serializeFragment(slice.content));
-          return converter.turndown(container);
+          return markdownWhitespace(converter.turndown(container));
         },
         attributes: { role: "textbox", "aria-label": t("Belge düzenleyici"), "aria-multiline": "true", spellcheck: "true" },
-        handlePaste: (_view, event) => {
+        handlePaste: (view, event, slice) => {
+          const text = event.clipboardData?.getData("text/plain") || event.clipboardData?.getData("Text") || "";
+          const html = event.clipboardData?.getData("text/html") || "";
           const file = Array.from(event.clipboardData?.files || []).find((f) => f.type.startsWith("image/"));
-          if (!file) return false;
+          // A rich selection may also contain a bitmap representation. Prefer
+          // editable text over treating the whole selection as a pasted image.
+          if (!file || text || html && clipboardHasText(html)) {
+            if (!slice.content.size && text) { view.pasteText(text); return true; }
+            return false;
+          }
           options.pasteImage(file);
           return true;
         },
@@ -215,7 +232,7 @@ export class DocumentEditor {
           const link = (event.target as HTMLElement).closest("a");
           if (!link) return false;
           event.preventDefault();
-          if (event.ctrlKey || event.metaKey) options.openLink(link.getAttribute("href") || "", link.getAttribute("data-wikilink"));
+          options.openLink(link.getAttribute("href") || "", link.getAttribute("data-wikilink"));
           return true;
         },
       },
@@ -236,6 +253,65 @@ export class DocumentEditor {
   }
 
   get composing(): boolean { return this.editor.view.composing; }
+  scrollRanges(): { from: number; to: number; element: HTMLElement }[] {
+    const positions = new Map<DocumentNode, number>();
+    this.editor.state.doc.forEach((node, position) => positions.set(node, position));
+    return this.provenance.sourceRanges(this.editor.state.doc).flatMap(range => {
+      const position = positions.get(range.node), element = position === undefined ? null : this.editor.view.nodeDOM(position);
+      return element instanceof HTMLElement ? [{ from: range.from, to: range.to, element }] : [];
+    });
+  }
+  setGitBaseline(base: string | null): void {
+    this.gitBase = base;
+    this.refreshGit();
+  }
+  refreshGit(): void {
+    if (this.gitBase === null && !(richGitKey.getState(this.editor.state)?.find().length)) return;
+    if (this.pending && !this.flush()) return;
+    const doc = this.editor.state.doc, marks: Decoration[] = [];
+    if (this.gitBase !== null) {
+      const changes = characterChanges(this.gitBase, this.markdown), positions = new Map<DocumentNode, number>();
+      doc.forEach((node, position) => positions.set(node, position));
+      const ranges = this.provenance.sourceRanges(doc).filter(range => positions.has(range.node)).sort((a,b) => a.from-b.from);
+      for (const hunk of changes) {
+        if (hunk.kind === "deleted") {
+          const target = ranges.find(range => range.to > hunk.from);
+          marks.push(Decoration.widget(target ? positions.get(target.node)! : doc.content.size, () => {
+            const point = document.createElement("span"); point.className = "git-deleted-point"; point.title = gitTitle("deleted"); point.contentEditable = "false"; return point;
+          }, { side: -1, key: `git-deleted-${hunk.from}` }));
+        }
+      }
+      const marked = ranges.map(range => ({ ...range, kind: changeForRange(changes, range.from, range.to) }));
+      for (let i=0; i<marked.length; i++) {
+        const item=marked[i]; if(!item.kind) continue;
+        if (/^(bulletList|orderedList|taskList)$/.test(item.node.type.name)) continue;
+        const position=positions.get(item.node)!, next=marked[i+1];
+        const dom=this.editor.view.nodeDOM(position), nextDom=next ? this.editor.view.nodeDOM(positions.get(next.node)!) : null;
+        const joined=next?.kind===item.kind && dom instanceof HTMLElement && nextDom instanceof HTMLElement && dom.nextElementSibling===nextDom;
+        const gap=joined ? Math.max(0, nextDom.getBoundingClientRect().top-dom.getBoundingClientRect().bottom) : 0;
+        marks.push(Decoration.node(position,position+item.node.nodeSize,{class:`git-${item.kind}${joined?" git-joined":""}`,"data-git-change":item.kind,style:joined?`--git-gap:${gap}px`:""}));
+      }
+      const items = listSource(this.markdown).items;
+      let index = 0;
+      const listMarks: {node: DocumentNode; position: number; kind: "added" | "modified"}[] = [];
+      doc.descendants((node, position) => {
+        if (node.type.name !== "listItem" && node.type.name !== "taskItem") return;
+        const source = items[index++]; if (!source) return;
+        const kinds = source.own.map(range => changeForRange(changes,range.from,range.to));
+        const kind = kinds.includes("modified") ? "modified" : kinds.includes("added") ? "added" : null;
+        if (kind) listMarks.push({node,position,kind});
+      });
+      for (const item of listMarks) {
+        const dom = this.editor.view.nodeDOM(item.position);
+        const next = listMarks.find(other => other.position === item.position+item.node.nodeSize && other.kind === item.kind);
+        const nextDom = next ? this.editor.view.nodeDOM(next.position) : null;
+        const joined = dom instanceof HTMLElement && nextDom instanceof HTMLElement && dom.nextElementSibling === nextDom;
+        const gap = joined ? Math.max(0,nextDom.getBoundingClientRect().top-dom.getBoundingClientRect().bottom) : 0;
+        marks.push(Decoration.node(item.position,item.position+item.node.nodeSize,{class:`git-${item.kind}${joined ? " git-joined" : ""}`,"data-git-change":item.kind,style:joined?`--git-gap:${gap}px`:""}));
+      }
+    }
+    this.editor.view.dispatch(this.editor.state.tr.setMeta(richGitKey, DecorationSet.create(doc, marks)));
+  }
   flush(): boolean {
     clearTimeout(this.serializeTimer);
     if (!this.pending) return true;
@@ -243,6 +319,12 @@ export class DocumentEditor {
     this.pending = false;
     this.markdown = this.serializeDocument();
     this.options.changed(this.markdown);
+    return true;
+  }
+  prepareSave(): boolean {
+    if (!this.flush()) return false;
+    const markdown = this.serializeDocument();
+    if (markdown !== this.markdown) { this.markdown = markdown; this.options.changed(markdown); }
     return true;
   }
 
@@ -295,6 +377,12 @@ export class DocumentEditor {
   }
 
   bookmark(key: string): void { this.bookmarks.set(key, this.editor.state.selection.getBookmark()); }
+  pastePlainText(key: string, text: string): void {
+    const bookmark = this.bookmarks.get(key); this.bookmarks.delete(key);
+    if (!bookmark || !text) return;
+    this.editor.view.dispatch(this.editor.state.tr.setSelection(bookmark.resolve(this.editor.state.doc)));
+    this.editor.view.pasteText(text);
+  }
   insertImage(key: string, src: string): void {
     const bookmark = this.bookmarks.get(key);
     this.bookmarks.delete(key);

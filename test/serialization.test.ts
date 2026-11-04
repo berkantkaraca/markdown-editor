@@ -23,6 +23,12 @@ describe("Markdown serileştirme", () => {
     assert.ok(markdown.includes("A \\| B"));
     assert.equal((rendered.match(/<td>/g) || []).length, 1);
   });
+  it("başlıksız, stilli ve birleşik HTML tablolarını HTML üretmeden Markdown yazar", () => {
+    const {markdown,rendered}=roundtrip('<table style="width:100%"><tr><td rowspan="2"><strong>A</strong><br>B</td><td>X</td></tr><tr><td>Y</td></tr><tr><td colspan="2">Z</td></tr></table>');
+    assert.doesNotMatch(markdown,/<(?:table|tr|td|br|p|col)/);
+    assert.match(markdown,/\*\*A\*\* \/ B/); assert.match(markdown,/\|  \| Y \|/); assert.match(markdown,/\| Z \|  \|/);
+    assert.equal((rendered.match(/<td>/g)||[]).length,6);
+  });
   it("görselin boşluklu yolunu, açıklamasını ve başlığını korur", () => {
     const { markdown, rendered } = roundtrip('<p><img src="assets/a (1).png" alt="Bir [görsel]" title="Açıklama"></p>');
     assert.ok(markdown.includes("<assets/a (1).png>"));
@@ -35,7 +41,8 @@ describe("Markdown serileştirme", () => {
 describe("boş paragraf aktarımı", () => {
   it("ardışık boş paragraflar yeniden açıldığında kaybolmaz", () => {
     const { markdown, rendered } = roundtrip("<p>presen</p><p></p><p></p><h2>Export a file</h2>");
-    assert.equal((markdown.match(/<p><\/p>/g) || []).length, 2);
+    assert.ok(!markdown.includes("<p>"));
+    assert.match(markdown,/presen\n{6}## Export a file/);
     assert.equal((rendered.match(/<p><\/p>/g) || []).length, 2);
   });
   it("boş tablo hücrelerine paragraf işareti eklemez", () => {

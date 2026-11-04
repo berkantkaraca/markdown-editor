@@ -117,6 +117,58 @@ test("pano HTML yapıştırma model üzerinden biçimli kaydedilir", async () =>
   assert.equal(await surface.locator("strong").innerText(), "metin");
 });
 
+test("Confluence benzeri HTML başlık, liste, tablo ve kod olarak yapışır",async()=>{
+  await page.locator("#live-root .tiptap").click();
+  await page.keyboard.press(`${modifier}+End`); await page.keyboard.press("Enter");
+  await page.evaluate(()=>{
+    const data=new DataTransfer();
+    data.setData("text/plain","Confluence pano metni");
+    data.setData("text/html",`<html><body><!--StartFragment--><div class="ak-renderer-document" contenteditable="false" data-md-range="0:8">
+      <div role="heading" aria-level="2">Pano başlığı</div>
+      <p>Bir <span style="font-weight:700">kalın</span>, <span style="font-style:italic">italik</span>, <s>silinen</s> ve <a href="https://example.com/wiki">bağlantı</a>.</p>
+      <ul><li>Birinci madde</li><li>İkinci madde</li></ul>
+      <ol start="3"><li>Üçüncü</li></ol>
+      <table class="confluenceTable"><tbody><tr><th>Ad</th><th>Değer</th></tr><tr><td>Pano hücresi</td><td>42</td></tr></tbody></table>
+      <pre data-language="javascript"><code><span>const</span> x = 1;\n  console.log(x);</code></pre>
+      <p><img src="https://example.com/image.png" alt="Şema"></p>
+      <button>Copy code</button><span aria-hidden="true">Araç simgesi</span><script>window.pasteExecuted=true</script>
+      </div><!--EndFragment--></body></html>`);
+    data.items.add(new File([new Uint8Array([0])],"selection.png",{type:"image/png"}));
+    document.querySelector("#live-root .tiptap").dispatchEvent(new ClipboardEvent("paste",{bubbles:true,cancelable:true,clipboardData:data}));
+    window.__karacaTest.rich.flush();
+  });
+  const root=page.locator("#live-root");
+  assert.equal(await root.locator("h2").filter({hasText:"Pano başlığı"}).count(),1);
+  assert.equal(await root.locator("strong").filter({hasText:"kalın"}).count(),1);
+  assert.equal(await root.locator("em").filter({hasText:"italik"}).count(),1);
+  assert.equal(await root.locator('a[href="https://example.com/wiki"]').count(),1);
+  assert.equal(await root.locator("td").filter({hasText:"Pano hücresi"}).count(),1);
+  assert.equal(await root.locator("pre code").last().innerText(),"const x = 1;\n  console.log(x);");
+  const text=await page.evaluate(()=>window.__karacaTest.sync.text);
+  assert.match(text,/## Pano başlığı/); assert.match(text,/\*\*kalın\*\*/); assert.match(text,/\*italik\*/);
+  assert.match(text,/```javascript/); assert.match(text,/Pano hücresi/);
+  assert.doesNotMatch(text,/Copy code|Araç simgesi|pasteExecuted|data-md-range/);
+  assert.equal(await page.evaluate(()=>!!window.pasteExecuted),false);
+  assert.equal(await page.evaluate(()=>window.__posted.filter(m=>m.type==="save-image").length),0);
+  await page.evaluate(()=>window.__karacaTest.setMode("source")); await page.evaluate(()=>window.__karacaTest.setMode("live"));
+  assert.equal(await root.locator("td").filter({hasText:"Pano hücresi"}).count(),1);
+  await page.screenshot({path:path.join(__dirname,"../out/clipboard-paket-25.png")});
+});
+
+test("boş HTML varsa düz metne döner; yalnız görsel panosu görsel akışını kullanır",async()=>{
+  await page.locator("#live-root .tiptap").click();
+  await page.evaluate(()=>{
+    const data=new DataTransfer();data.setData("text/plain","Kaybolmayan düz metin");data.setData("text/html","<meta charset=utf-8><span></span>");
+    document.querySelector("#live-root .tiptap").dispatchEvent(new ClipboardEvent("paste",{bubbles:true,cancelable:true,clipboardData:data}));
+  });
+  assert.match(await page.locator("#live-root").innerText(),/Kaybolmayan düz metin/);
+  await page.evaluate(()=>{
+    const data=new DataTransfer();data.items.add(new File([new Uint8Array([0])],"image.png",{type:"image/png"}));
+    document.querySelector("#live-root .tiptap").dispatchEvent(new ClipboardEvent("paste",{bubbles:true,cancelable:true,clipboardData:data}));
+  });
+  await page.waitForFunction(()=>window.__posted.some(m=>m.type==="save-image"));
+});
+
 test("örnek belge: tek yüzey, gerçek Mermaid render ve belge görünümü", async () => {
   const sample = fs.readFileSync(path.join(__dirname, "fixtures/editor.md"), "utf8");
   await page.evaluate((text) => window.postMessage({ proto: 1, type: "update", text, version: 100 }, "*"), sample);
@@ -125,7 +177,7 @@ test("örnek belge: tek yüzey, gerçek Mermaid render ve belge görünümü", a
   assert.equal(await page.locator("#live-root textarea, #live-root .block, #live-root .tablebar").count(), 0);
   await page.locator("#live-wrap").evaluate((element) => { element.scrollTop = 0; });
   fs.mkdirSync(path.join(__dirname, "../out"), { recursive: true });
-  await page.screenshot({ path: path.join(__dirname, "../out/editor-paket-14.png") });
+  await page.screenshot({ path: path.join(__dirname, "../out/editor-paket-25.png") });
   await page.getByRole("tab", { name: "Okuma", exact: true }).click();
   await page.getByRole("tab", { name: "Canlı", exact: true }).click();
   assert.equal(await page.locator('#live-root [contenteditable="true"]').count(), 1);
@@ -166,9 +218,9 @@ test("canlı ve okuma: çerçevesiz alan ve görev satırları aynı ölçülerd
     }
     assert.ok(Math.abs(live.tasks[i].box.y - live.tasks[i].content.y) < 7, "kutu metinle aynı satırda");
   }
-  await page.screenshot({ path: path.join(__dirname, "../out/reading-paket-14.png") });
+  await page.screenshot({ path: path.join(__dirname, "../out/reading-paket-25.png") });
   await page.getByRole("tab", { name: "Canlı", exact: true }).click();
-  await page.screenshot({ path: path.join(__dirname, "../out/live-paket-14.png") });
+  await page.screenshot({ path: path.join(__dirname, "../out/live-paket-25.png") });
 });
 
 
@@ -190,7 +242,8 @@ test("Enter ile açılan boş paragraf Windows kayıt yankısı ve mod geçişin
   await page.getByRole("tab", { name: "Canlı", exact: true }).click();
   assert.equal(await page.locator("#live-root .tiptap > p").nth(1).textContent(), "");
   const saved = await page.evaluate(() => window.__karacaTest.sync.text);
-  assert.ok(saved.includes("<p></p>"));
+  assert.ok(!saved.includes("<p>"));
+  assert.match(saved,/presen\n{4}## Export a file/);
   await page.reload();
   await page.locator("#live-root h1").waitFor();
   await page.evaluate((text) => window.postMessage({ proto: 1, type: "update", text, version: 100 }, "*"), saved);
@@ -223,13 +276,13 @@ test("referans kod paleti Java ve TypeScript için Canlı/Okuma modlarında ayn�
   assert.equal(live.background, "rgb(40, 40, 40)");
   assert.deepEqual(live.tokens, ["rgb(78, 201, 176)", "rgb(78, 201, 176)", "rgb(220, 220, 170)", "rgb(197, 134, 192)", "rgb(206, 145, 120)", "rgb(86, 156, 214)", "rgb(156, 220, 254)"]);
   assert.deepEqual(live.source.map((source) => source.trimEnd()), [java, ts]);
-  await page.screenshot({ path: path.join(__dirname, "../out/code-live-paket-14.png") });
+  await page.screenshot({ path: path.join(__dirname, "../out/code-live-paket-25.png") });
   await page.getByRole("tab", { name: "Okuma", exact: true }).click();
   const reading = await colors("#reading-root");
   assert.deepEqual(reading.tokens, live.tokens);
   assert.equal(reading.background, live.background);
   assert.deepEqual(reading.source.map((source) => source.trimEnd()), [java, ts]);
-  await page.screenshot({ path: path.join(__dirname, "../out/code-reading-paket-14.png") });
+  await page.screenshot({ path: path.join(__dirname, "../out/code-reading-paket-25.png") });
 });
 
 
@@ -295,7 +348,7 @@ test("araç çubuğu dar ekranda erişilebilir ve simgeler etiketlidir", async (
   assert.equal(await page.evaluate(() => document.body.scrollWidth > innerWidth), false);
   await page.getByRole("tab", { name: "Okuma", exact: true }).click();
   await page.getByRole("tab", { name: "Canlı", exact: true }).click();
-  await page.screenshot({ path: path.join(__dirname, "../out/toolbar-mobile-paket-14.png") });
+  await page.screenshot({ path: path.join(__dirname, "../out/toolbar-mobile-paket-25.png") });
 });
 
 test("IME bileşimi ve Unicode metin kayıtta tek parça korunur", { skip: browserName !== "chromium" }, async () => {
@@ -318,6 +371,66 @@ test("Unicode yazım farklı tarayıcılarda kaydedilir", async () => {
   await page.waitForFunction(() => window.__karacaTest.sync.text.includes("日本語 中文 한글 Türkçe ğışüöç"));
 });
 
+test("Git renkleri Canlı, Kaynak ve Okuma modlarında görünür; commit sonrası temizlenir", async () => {
+  await page.evaluate(() => {
+    window.__karacaTest.sync.receive({text:"# Git\n\nNew.\n\nKeep.\n\nTail.\n\nAdded.", version:50});
+    window.postMessage({proto:1,type:"git-baseline",text:"# Git\n\nOld.\n\nKeep.\n\nRemove.\n\nTail."},"*");
+  });
+  await page.locator("#live-root .git-modified").waitFor();
+  assert.equal(await page.locator("#live-root .git-added").count(), 1);
+  assert.equal(await page.locator("#live-root .git-deleted-point").count(), 1);
+  assert.equal(await page.locator("#live-root .git-added").evaluate(el => getComputedStyle(el,"::before").backgroundColor), "rgb(46, 160, 67)");
+  assert.equal(await page.locator("#live-root .git-modified").evaluate(el => getComputedStyle(el,"::before").backgroundColor), "rgb(0, 120, 212)");
+  await page.screenshot({path:path.join(__dirname,"../out/git-live-paket-25.png")});
+  await page.getByRole("tab", {name:"Kaynak",exact:true}).click();
+  await page.locator(".git-source-gutter .git-modified").waitFor();
+  assert.ok(await page.locator(".git-source-gutter .git-added").count());
+  assert.ok(await page.locator(".git-source-gutter .git-deleted").count());
+  await page.getByRole("tab", {name:"Okuma",exact:true}).click();
+  assert.ok(await page.locator("#reading-root .git-modified").count());
+  assert.ok(await page.locator("#reading-root .git-added").count());
+  await page.getByRole("tab", {name:"Canlı",exact:true}).click();
+  await page.evaluate(() => window.postMessage({proto:1,type:"git-baseline",text:window.__karacaTest.sync.text},"*"));
+  await page.waitForFunction(() => document.querySelectorAll("#live-root .git-modified,#live-root .git-added,#live-root .git-deleted-point").length === 0);
+  await page.evaluate(() => window.postMessage({proto:1,type:"git-baseline",text:null},"*"));
+  await page.waitForFunction(() => !document.querySelector(".git-source-gutter"));
+});
+
+test("Canlı modda bağlantılar el imleciyle ve Ctrl gerekmeden açılır", async () => {
+  await page.evaluate(() => window.__karacaTest.sync.receive({ text: "# İçindekiler\n\n[Hedefe git](#hedef)\n\n[Dış bağlantı](https://example.com)\n\n[[Not|Wiki bağlantısı]]\n\n## Hedef\n\nSon", version: 50 }));
+  const jump = page.locator('#live-root a[href="#hedef"]');
+  await jump.hover(); assert.equal(await jump.evaluate(link => getComputedStyle(link).cursor), "pointer");
+  await jump.click();
+  await page.waitForFunction(() => window.__posted.some(message => message.type === "open-link" && message.href === "#hedef"));
+  await page.locator('#live-root a[href="https://example.com"]').click();
+  await page.locator('#live-root a[data-wikilink]').click();
+  const requests = await page.evaluate(() => window.__posted.filter(message => message.type === "open-link" || message.type === "open-wikilink"));
+  assert.equal(requests.filter(message => message.href === "#hedef").length, 1);
+  assert.ok(requests.some(message => message.href === "https://example.com"));
+  assert.ok(requests.some(message => message.type === "open-wikilink" && message.name === "Not|Wiki bağlantısı"));
+  assert.equal(await page.evaluate(() => window.__posted.filter(message => message.type === "edit").length), 0);
+});
+
+test("görsel penceresi düğmenin altında açılır; dosya seç, iptal ve ekle aynı satırdadır", async () => {
+  await page.evaluate(() => window.postMessage({ proto: 1, type: "config", language: "en" }, "*"));
+  const anchor = page.getByRole("button", { name: "Image", exact: true });
+  await anchor.click();
+  const dialog = page.getByRole("dialog", { name: "Insert image", exact: true });
+  for (const width of [1280, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    const button = await anchor.boundingBox(), box = await dialog.boundingBox();
+    assert.ok(Math.abs(box.y - (button.y + button.height + 6)) <= 1);
+    assert.ok(box.x >= 8 && box.x + box.width <= width - 8);
+    const buttons = await dialog.locator(".kdialog-row button").evaluateAll(elements => elements.map(element => {
+      const box = element.getBoundingClientRect(); return { y: box.y, right: box.right };
+    }));
+    assert.equal(buttons.length, 3); assert.ok(buttons.every(button => Math.abs(button.y - buttons[0].y) <= 1));
+    assert.ok(buttons.every(button => button.right <= box.x + box.width));
+  }
+  await page.screenshot({ path: path.join(__dirname, "../out/image-popup-paket-25.png") });
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click(); assert.equal(await dialog.count(), 0);
+});
+
 test("dil seçimi İngilizce/Türkçe arayüzü değiştirir, belgeyi korur ve yeniden açılınca kalır", async () => {
   assert.equal(await page.locator("#ui-language").count(), 0);
   const initialText = await page.evaluate(() => window.__karacaTest.sync.text);
@@ -331,7 +444,7 @@ test("dil seçimi İngilizce/Türkçe arayüzü değiştirir, belgeyi korur ve y
   await page.getByRole("dialog", { name: "Edit math", exact: true }).getByRole("button", { name: "Cancel", exact: true }).click();
   assert.equal(await page.evaluate(() => window.__karacaTest.sync.text), initialText);
   await page.reload(); await page.getByRole("tab", { name: "Live", exact: true }).waitFor();
-  await page.screenshot({ path: path.join(__dirname, "../out/english-paket-14.png") });
+  await page.screenshot({ path: path.join(__dirname, "../out/english-paket-25.png") });
   await page.evaluate(() => { sessionStorage.setItem("ui-language", "tr"); window.postMessage({ proto: 1, type: "config", language: "tr" }, "*"); });
   await page.getByRole("tab", { name: "Canlı", exact: true }).waitFor();
   await page.getByRole("button", { name: "Tablo", exact: true }).click();
@@ -372,7 +485,7 @@ test("tablo seçici: önizleme, klavye, özel boyut ve dar ekran", async () => {
   assert.equal(await picker.locator(".table-size").innerText(), "4 sütun × 5 satır");
   assert.equal(await picker.locator(".table-grid .selected").count(), 20);
   await page.setViewportSize({ width: 390, height: 800 });
-  await page.screenshot({ path: path.join(__dirname, "../out/table-picker-paket-14.png") });
+  await page.screenshot({ path: path.join(__dirname, "../out/table-picker-paket-25.png") });
   const box = await picker.boundingBox(); assert.ok(box.x >= 0 && box.x + box.width <= 390);
   await page.keyboard.press("Escape"); assert.equal(await picker.count(), 0);
   await page.getByRole("button", { name: "Tablo", exact: true }).click();
@@ -418,4 +531,134 @@ test("yeniden yüklenen webview kaydedilmemiş taslağı geri getirir", async ()
   await page.getByRole("button", { name: "Taslağı geri yükle", exact: true }).click();
   await page.waitForFunction(() => window.__karacaTest.sync.text.includes("Kurtarılacak taslak"));
   assert.match(await page.locator("#live-root").innerText(), /Kurtarılacak taslak/);
+});
+
+
+test("Git çizgileri komşu paragraflarda birleşir, değişmeyen paragrafta durur", async () => {
+  await page.evaluate(() => {
+    window.postMessage({proto:1,type:"update",text:"# Başlık\n\nYeni bir.\n\nYeni iki.\n\nEski.\n\nYeni üç.\n",version:2},"*");
+    window.postMessage({proto:1,type:"git-baseline",text:"# Başlık\n\nEski.\n"},"*");
+  });
+  for(const mode of ["live","reading","split"]) {
+    await page.evaluate(mode=>window.__karacaTest.setMode(mode),mode);
+    await page.waitForTimeout(150);
+    const root = mode==="live" ? "#live-root" : mode==="reading" ? "#reading-root" : "#split-root";
+    const geometry=await page.locator(root).evaluate(root=>Array.from(root.querySelectorAll(".git-added")).map(element=>{
+      const rect=element.getBoundingClientRect(), pseudo=getComputedStyle(element,"::before");
+      return {top:rect.top+parseFloat(pseudo.top),bottom:rect.bottom-parseFloat(pseudo.bottom),joined:element.classList.contains("git-joined")};
+    }));
+    assert.equal(geometry.length,3);
+    assert.ok(geometry[0].joined); assert.ok(Math.abs(geometry[0].bottom-geometry[1].top)<=2);
+    assert.equal(geometry[1].joined,false);
+  }
+});
+
+test("Split kaydırması uzun eklemelerden sonra ortak içeriği hizalar", async()=>{
+  const text=Array.from({length:80},(_,i)=>`## Bölüm ${i}\n\nParagraf ${i}.`).join("\n\n");
+  await page.evaluate(text=>{window.postMessage({proto:1,type:"update",text,version:2},"*");},text);
+  await page.waitForTimeout(100);
+  await page.evaluate(()=>window.__karacaTest.setMode("split"));
+  await page.waitForTimeout(200);
+  await page.evaluate(()=>{
+    const view=window.__karacaTest.source.view, index=view.state.doc.toString().indexOf("## Bölüm 40");
+    view.scrollDOM.scrollTop=view.lineBlockAt(index).top-25;
+  });
+  await page.waitForTimeout(400);
+  const offset=await page.evaluate(()=>{
+    const view=window.__karacaTest.source.view, index=view.state.doc.toString().indexOf("## Bölüm 40");
+    const heading=Array.from(document.querySelectorAll("#split-root h2")).find(el=>el.textContent==="Bölüm 40");
+    return {source:view.documentTop+view.lineBlockAt(index).top-view.scrollDOM.getBoundingClientRect().top,
+      preview:heading.getBoundingClientRect().top-document.querySelector("#split-preview").getBoundingClientRect().top};
+  });
+  assert.ok(Math.abs(offset.source-offset.preview)<8,JSON.stringify(offset));
+});
+
+
+test("sürekli kaydırma karşı tarafa her karede iletilir ve geri besleme üretmez", async()=>{
+  const text=Array.from({length:80},(_,i)=>`## Bölüm ${i}\n\nParagraf ${i}.`).join("\n\n");
+  await page.evaluate(text=>window.postMessage({proto:1,type:"update",text,version:2},"*"),text);
+  await page.waitForTimeout(100); await page.evaluate(()=>window.__karacaTest.setMode("split"));
+  await page.waitForTimeout(200);
+  const count=await page.evaluate(async()=>{
+    const view=window.__karacaTest.source.view;
+    window.__posted=[];
+    for(let i=0;i<14;i++) { view.scrollDOM.scrollTop+=20; await new Promise(requestAnimationFrame); }
+    await new Promise(resolve=>setTimeout(resolve,200));
+    return window.__posted.filter(m=>m.type==="scroll-sync").length;
+  });
+  assert.ok(count>=7,`14 kaydırmada ${count} güncelleme`);
+  const before=await page.evaluate(()=>window.__posted.filter(m=>m.type==="scroll-sync").length);
+  await page.waitForTimeout(200);
+  assert.equal(await page.evaluate(()=>window.__posted.filter(m=>m.type==="scroll-sync").length),before);
+});
+
+test("yalnızca son liste maddesinin Git çizgisi mavi olur",async()=>{
+  const base="- Elma\n- Armut\n  - Yeşil elma\n  - Deveci armudu\n- Muz\n";
+  await page.evaluate(base=>{
+    window.postMessage({proto:1,type:"update",text:base.replace("Muz","Muza"),version:2},"*");
+    window.postMessage({proto:1,type:"git-baseline",text:base},"*");
+  },base);
+  for(const mode of ["live","reading","split"]){
+    await page.evaluate(mode=>window.__karacaTest.setMode(mode),mode); await page.waitForTimeout(100);
+    const root=mode==="live"?"#live-root":mode==="reading"?"#reading-root":"#split-root";
+    assert.equal(await page.locator(root+" .git-modified").count(),1);
+    assert.equal((await page.locator(root+" li.git-modified").innerText()).trim(),"Muza");
+  }
+});
+
+
+test("tablo üzerinde hızlı işlemler, satır/sütun seçme ve Delete ile silme",async()=>{
+  const text="# Tablo denemesi\n\n| Ad | Değer |\n| --- | --- |\n| Bir | 1 |\n| İki | 2 |\n\nSon.";
+  await page.evaluate(text=>window.postMessage({proto:1,type:"update",text,version:2},"*"),text);
+  const cell=page.locator("#live-root td").filter({hasText:"Bir"});await cell.waitFor();
+  const box=await cell.boundingBox();await page.mouse.move(box.x+box.width/2,box.y+box.height/2);
+  const quick=page.getByRole("toolbar",{name:"Tablo kısayolları",exact:true});await quick.waitFor({state:"visible"});
+  await quick.getByRole("button",{name:"Alta satır ekle",exact:true}).click();assert.equal(await page.locator("#live-root tr").count(),4);
+  await page.keyboard.press(`${modifier}+z`);assert.equal(await page.locator("#live-root tr").count(),3);
+  await cell.click();await quick.getByRole("button",{name:"Satırı seç",exact:true}).click();
+  assert.equal(await page.locator("#live-root .selectedCell").count(),2);
+  await page.keyboard.press("Delete");assert.equal(await page.locator("#live-root tr").count(),2);
+  assert.doesNotMatch(await page.locator("#live-root").innerText(),/Bir/);
+  await page.keyboard.press(`${modifier}+z`);assert.equal(await page.locator("#live-root tr").count(),3);
+  await cell.click();await page.getByRole("button",{name:"Tablo",exact:true}).click();
+  const menu=page.getByRole("menu",{name:"Tablo işlemleri",exact:true});await menu.waitFor();
+  await page.screenshot({path:path.join(__dirname,"../out/table-menu-paket-25.png")});
+  await menu.getByRole("menuitem",{name:"Sağa sütun ekle",exact:true}).click();assert.equal(await page.locator("#live-root th").count(),3);
+  await page.keyboard.press("Alt+Shift+ArrowDown");assert.equal(await page.locator("#live-root tr").count(),4);
+  await page.evaluate(()=>window.__karacaTest.rich.flush());
+  assert.doesNotMatch(await page.evaluate(()=>window.__karacaTest.sync.text),/<(?:table|button)|table-cell-controls|table-action-menu/);
+  await page.evaluate(()=>window.__karacaTest.setMode("reading"));assert.equal(await quick.isVisible(),false);
+});
+
+test("tablo hızlı işlemleri dar ekranda taşmaz ve yalnız hedef tabloyu düzenler",async()=>{
+  await page.setViewportSize({width:390,height:780});
+  const text="| A | B |\n| --- | --- |\n| Bir | 1 |\n\nAra metin.\n\n| C | D |\n| --- | --- |\n| İki | 2 |";
+  await page.evaluate(text=>window.postMessage({proto:1,type:"update",text,version:2},"*"),text);
+  const first=page.locator("#live-root table").nth(0),second=page.locator("#live-root table").nth(1);
+  await first.locator("td").first().click();
+  const cell=second.locator("td").first(),rect=await cell.boundingBox();await page.mouse.move(rect.x+30,rect.y+10);
+  const quick=page.getByRole("toolbar",{name:"Tablo kısayolları",exact:true});await quick.waitFor({state:"visible"});
+  const box=await quick.boundingBox();assert.ok(box.x>=0&&box.x+box.width<=390);
+  await quick.getByRole("button",{name:"Sağa sütun ekle",exact:true}).click();
+  assert.equal(await first.locator("th").count(),2);assert.equal(await second.locator("th").count(),3);
+  await second.locator("td").first().click();await page.getByRole("button",{name:"Tablo",exact:true}).click();
+  const menu=page.getByRole("menu",{name:"Tablo işlemleri",exact:true}),menuBox=await menu.boundingBox();
+  assert.ok(menuBox.x>=0&&menuBox.x+menuBox.width<=390);assert.ok(menuBox.y>=0&&menuBox.y+menuBox.height<=780);
+  await page.screenshot({path:path.join(__dirname,"../out/table-mobile-paket-25.png")});
+});
+
+test("üçüncü satırdan hızlı işlem düğmesine giderken hedef satır korunur", async () => {
+  const text = "| A | B |\n| --- | --- |\n| İkinci | 2 |\n| Üçüncü | 3 |\n| Dördüncü | 4 |";
+  await page.evaluate(text => window.postMessage({ proto: 1, type: "update", text, version: 2 }, "*"), text);
+  const cell = page.getByRole("cell", { name: "Üçüncü", exact: true });
+  await cell.waitFor();
+  const rect = await cell.boundingBox();
+  await page.mouse.move(rect.x + 12, rect.y + rect.height / 2);
+  const button = page.getByRole("toolbar", { name: "Tablo kısayolları" }).getByRole("button", { name: "Alta satır ekle" });
+  await button.waitFor();
+  const target = await button.boundingBox();
+  await page.mouse.move(target.x + target.width / 2, target.y + target.height / 2, { steps: 20 });
+  await page.mouse.down();
+  await page.mouse.up();
+  assert.deepEqual(await page.locator("#live-root tr").allTextContents(), ["AB", "İkinci2", "Üçüncü3", "", "Dördüncü4"]);
 });

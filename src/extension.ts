@@ -1,4 +1,6 @@
 import { translate, type Language } from "./shared/i18n";
+import { ImageAssets, generatedImages } from "./host/image-assets";
+import { watchGitBaseline } from "./host/git-baseline";
 import { RequestQueue } from "./host/request-queue";
 import { DraftStore } from "./host/draft-store";
 import { normalizeNewlines } from "./shared/md-utils";
@@ -275,10 +277,14 @@ class KaracaBacklinkProvider implements vscode.TreeDataProvider<vscode.TreeItem>
 class KaracaMarkdownProvider implements vscode.CustomTextEditorProvider {
   // Açık paneller (reveal-line / outline navigasyonu için uri -> panel)
   readonly panels = new Map<string, vscode.WebviewPanel>();
+  private comparisonPanels = new Set<{ uri: vscode.Uri; panel: vscode.WebviewPanel }>();
   // Sürüm tarihçesi (çakışan yazımlarda üç-yönlü birleştirme için uri -> version -> metin)
   private readonly docVersions = new Map<string, Map<number, string>>();
 
   private readonly drafts: DraftStore;
+  private readonly imageAssets: ImageAssets;
+  private readonly savedImages = new Map<string, Set<string>>();
+  private readonly newImages = new Map<string, Set<string>>();
   constructor(private readonly context: vscode.ExtensionContext) {
     const directory = path.join(context.globalStorageUri.fsPath, "drafts");
     // Preserve package-12 backups across the publisher/extension ID change.
@@ -287,6 +293,44 @@ class KaracaMarkdownProvider implements vscode.CustomTextEditorProvider {
       if (!fs.existsSync(directory) && fs.existsSync(legacy)) fs.cpSync(legacy, directory, { recursive: true, force: false });
     } catch { void vscode.window.showWarningMessage(t("Eski taslak yedekleri taşınamadı. Eski yedekler korunuyor.")); }
     this.drafts = new DraftStore(directory);
+    this.imageAssets = new ImageAssets(path.join(context.globalStorageUri.fsPath, "image-recovery"));
+    const track = (document: vscode.TextDocument) => {
+      if (document.uri.scheme === "file" && /\.(md|markdown|mdown)$/i.test(document.uri.fsPath)) {
+        this.savedImages.set(document.uri.toString(), new Set(generatedImages(document.getText())));
+        void this.imageAssets.restore(path.dirname(document.uri.fsPath), document.getText()).catch(() => {});
+      }
+    };
+    vscode.workspace.textDocuments.forEach(track);
+    context.subscriptions.push(vscode.workspace.onDidOpenTextDocument(track),
+      vscode.workspace.onDidChangeTextDocument(event => {
+        const document = event.document;
+        if (document.uri.scheme !== "file" || !/\.(md|markdown|mdown)$/i.test(document.uri.fsPath)) return;
+        void this.imageAssets.restore(path.dirname(document.uri.fsPath), document.getText()).then(restored => {
+          if (restored) this.panels.get(document.uri.toString())?.webview.postMessage({ proto: PROTO, type: "images-restored" });
+        }).catch(() => {});
+      }),
+      vscode.workspace.onDidSaveTextDocument(document => {
+        if (document.uri.scheme !== "file" || !/\.(md|markdown|mdown)$/i.test(document.uri.fsPath)) return;
+        const key = document.uri.toString();
+        const previous = new Set([...(this.savedImages.get(key) || []), ...(this.newImages.get(key) || [])]);
+        const candidates = [...previous];
+        this.newImages.set(key, previous);
+        this.savedImages.set(key, new Set(generatedImages(document.getText())));
+        void this.imageAssets.cleanup(path.dirname(document.uri.fsPath), candidates, () => this.imageReferences(document)).then(() => {
+          const pending = this.newImages.get(key);
+          candidates.forEach(name => pending?.delete(name));
+          if (!pending?.size) this.newImages.delete(key);
+        }).catch(error => { void vscode.window.showWarningMessage(`${t("Kullanılmayan görseller temizlenemedi:")} ${error.message}`); });
+      }));
+  }
+
+  private async imageReferences(document: vscode.TextDocument): Promise<string[]> {
+    const root = vscode.workspace.getWorkspaceFolder(document.uri)?.uri || vscode.Uri.file(path.dirname(document.uri.fsPath));
+    const pattern = vscode.workspace.getWorkspaceFolder(document.uri) ? "**/*.{md,markdown,mdown}" : new vscode.RelativePattern(root, "**/*.{md,markdown,mdown}");
+    const files = await vscode.workspace.findFiles(pattern, "{**/node_modules/**,**/.git/**}");
+    const texts = new Map(vscode.workspace.textDocuments.filter(doc => /\.(md|markdown|mdown)$/i.test(doc.uri.fsPath)).map(doc => [doc.uri.toString(), doc.getText()]));
+    for (const file of files) if (!texts.has(file.toString())) texts.set(file.toString(), Buffer.from(await vscode.workspace.fs.readFile(file)).toString("utf8"));
+    return [...texts.values()];
   }
 
   private recordVersion(uri: vscode.Uri, version: number, text: string): void {
@@ -348,9 +392,17 @@ class KaracaMarkdownProvider implements vscode.CustomTextEditorProvider {
 
     webviewPanel.webview.html = this.getHtml(webviewPanel.webview);
     this.panels.set(document.uri.toString(), webviewPanel);
+    const comparisonPanel = { uri: document.uri, panel: webviewPanel };
+    this.comparisonPanels.add(comparisonPanel);
     this.recordVersion(document.uri, document.version, document.getText());
 
     const requests = new RequestQueue();
+    let gitBase: string | null = null, gitWatcher: vscode.Disposable | undefined, panelDisposed = false;
+    void watchGitBaseline(document.uri, text => {
+      gitBase = text; void webviewPanel.webview.postMessage({ proto: PROTO, type: "git-baseline", text });
+    }).then(watcher => { if (panelDisposed) watcher.dispose(); else gitWatcher = watcher; }).catch(() => {
+      gitBase = null; if (!panelDisposed) void webviewPanel.webview.postMessage({ proto: PROTO, type: "git-baseline", text: null });
+    });
     const draftKey = document.uri.toString();
     let draftWarningShown = false;
     const draftError = () => {
@@ -399,11 +451,17 @@ class KaracaMarkdownProvider implements vscode.CustomTextEditorProvider {
     });
 
     webviewPanel.onDidDispose(() => {
+      panelDisposed = true; gitWatcher?.dispose();
       changeSub.dispose();
       saveSub.dispose();
       configSub.dispose();
-      this.panels.delete(document.uri.toString());
-      this.docVersions.delete(document.uri.toString());
+      this.comparisonPanels.delete(comparisonPanel);
+      if (this.panels.get(document.uri.toString()) === webviewPanel) {
+        const remaining = Array.from(this.comparisonPanels).filter(entry => entry.uri.toString() === document.uri.toString());
+        const replacement = remaining.find(entry => entry.panel.visible) || remaining[remaining.length-1];
+        if (replacement) this.panels.set(document.uri.toString(),replacement.panel);
+        else { this.panels.delete(document.uri.toString()); this.docVersions.delete(document.uri.toString()); }
+      }
     });
 
     // Webview'den gelen mesajlar
@@ -412,9 +470,36 @@ class KaracaMarkdownProvider implements vscode.CustomTextEditorProvider {
         return; // bilinmeyen protokol sürümü
       }
       switch (msg?.type) {
+        case "read-clipboard-text": {
+          if (typeof msg.nonce !== "string" || msg.nonce.length > 100) break;
+          try {
+            const text = await vscode.env.clipboard.readText();
+            void webviewPanel.webview.postMessage({proto:PROTO,type:"clipboard-text",nonce:msg.nonce,text});
+          } catch {
+            void webviewPanel.webview.postMessage({proto:PROTO,type:"clipboard-text",nonce:msg.nonce,text:""});
+          }
+          break;
+        }
+        case "scroll-sync": {
+          const position = msg.position;
+          if (!position || !Number.isFinite(position.progress) || !Array.isArray(position.anchors) || position.anchors.length > 10) break;
+          if (!position.anchors.every((a: any) => typeof a.key === "string" && a.key.length < 64 && Number.isInteger(a.occurrence) && a.occurrence >= 0 && Number.isFinite(a.offset) && (a.fraction === null || Number.isFinite(a.fraction) && a.fraction >= 0 && a.fraction <= 1))) break;
+          const filePath = (uri: vscode.Uri) => {
+            if (uri.scheme === "git") { try { const query = JSON.parse(uri.query); if (typeof query.path === "string") return path.normalize(query.path); } catch {} }
+            return path.normalize(uri.fsPath);
+          };
+          for (const peer of this.comparisonPanels) {
+            if (peer === comparisonPanel || !peer.panel.visible || !webviewPanel.visible) continue;
+            if (!([document.uri.scheme,peer.uri.scheme].includes("git") && [document.uri.scheme,peer.uri.scheme].includes("file"))) continue;
+            if (filePath(document.uri) !== filePath(peer.uri) || peer.panel.viewColumn !== webviewPanel.viewColumn) continue;
+            void peer.panel.webview.postMessage({proto:PROTO,type:"scroll-sync",position:{progress:Math.max(0,Math.min(1,position.progress)),anchors:position.anchors.map((a: any)=>({key:a.key,occurrence:a.occurrence,offset:a.offset,fraction:a.fraction}))}});
+          }
+          break;
+        }
         case "ready": {
           postConfig();
           updateWebview();
+          void webviewPanel.webview.postMessage({ proto: PROTO, type: "git-baseline", text: gitBase });
           const draft = await this.drafts.read(draftKey);
           if (draft && !document.isDirty && normalizeNewlines(draft.text) === normalizeNewlines(document.getText())) {
             await this.drafts.clear(draftKey, document.getText()).catch(draftError);
@@ -467,6 +552,26 @@ class KaracaMarkdownProvider implements vscode.CustomTextEditorProvider {
         }
         case "save-image": {
           await this.handleSaveImage(document, webviewPanel, msg);
+          break;
+        }
+        case "pick-image": {
+          try {
+            const files = await vscode.window.showOpenDialog({ canSelectMany: false, canSelectFolders: false, canSelectFiles: true,
+              title: t("Görsel seç"), defaultUri: vscode.Uri.file(path.dirname(document.uri.fsPath)),
+              filters: { [t("Görseller")]: ["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg"] } });
+            let image = "";
+            if (files?.[0]) {
+              if ((await vscode.workspace.fs.stat(files[0])).size > 15 * 1024 * 1024) throw Error(t("Görsel 15 MB'tan büyük."));
+              const data = await vscode.workspace.fs.readFile(files[0]);
+              const ext = path.extname(files[0].fsPath).slice(1).toLowerCase();
+              const mime = ({ jpg: "image/jpeg", jpeg: "image/jpeg", svg: "image/svg+xml" } as Record<string, string>)[ext] || `image/${ext}`;
+              image = await this.savePastedImage(document, `data:${mime};base64,${Buffer.from(data).toString("base64")}`) || "";
+            }
+            webviewPanel.webview.postMessage({ proto: PROTO, type: "image-picked", nonce: msg.nonce, path: image });
+          } catch (error: any) {
+            webviewPanel.webview.postMessage({ proto: PROTO, type: "image-picked", nonce: msg.nonce, path: "" });
+            void vscode.window.showErrorMessage(`${t("Görsel yapıştırılamadı:")} ${error.message}`);
+          }
           break;
         }
         case "resolve-imgs": {
@@ -595,15 +700,21 @@ class KaracaMarkdownProvider implements vscode.CustomTextEditorProvider {
     const assetsDir = vscode.Uri.file(path.join(docDir, "assets"));
     await vscode.workspace.fs.createDirectory(assetsDir);
     const stamp = new Date().toISOString().replace(/[^0-9]/g, "").slice(0, 14);
-    let name = `yapistirilan-${stamp}.${ext}`;
+    let name = `img-${stamp}.${ext}`;
     let target = vscode.Uri.file(path.join(assetsDir.fsPath, name));
     let i = 1;
-    while (await this.existsUri(target)) {
-      name = `yapistirilan-${stamp}-${i}.${ext}`;
-      target = vscode.Uri.file(path.join(assetsDir.fsPath, name));
-      i++;
+    while (true) {
+      if (await this.imageAssets.hasRecovery(docDir, name)) {
+        name = `img-${stamp}-${i++}.${ext}`; target = vscode.Uri.file(path.join(assetsDir.fsPath, name)); continue;
+      }
+      try { await fs.promises.writeFile(target.fsPath, buf, { flag: "wx" }); break; }
+      catch (error: any) {
+        if (error.code !== "EEXIST") throw error;
+        name = `img-${stamp}-${i++}.${ext}`; target = vscode.Uri.file(path.join(assetsDir.fsPath, name));
+      }
     }
-    await vscode.workspace.fs.writeFile(target, buf);
+    const key = document.uri.toString(), images = this.newImages.get(key) || new Set<string>();
+    images.add(name); this.newImages.set(key, images);
     return path.relative(docDir, target.fsPath).split(path.sep).join("/");
   }
 
@@ -672,7 +783,7 @@ class KaracaMarkdownProvider implements vscode.CustomTextEditorProvider {
         }
         const uri = vscode.Uri.file(path.resolve(baseDir, clean));
         await vscode.workspace.fs.stat(uri);
-        map[raw] = webviewPanel.webview.asWebviewUri(uri).toString();
+        map[raw] = webviewPanel.webview.asWebviewUri(uri).with({ query: `v=${Date.now()}` }).toString();
       } catch {
         // dosya yoksa eşleme dışı bırak
       }

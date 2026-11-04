@@ -1,4 +1,5 @@
 import { t } from "./i18n";
+import { sourceGitExtensions, gitBaseEffect } from "./git-markers";
 import { EditorState, Compartment, Transaction } from "@codemirror/state";
 import { EditorView, keymap, lineNumbers, highlightActiveLine } from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap, undo, redo, undoDepth, redoDepth } from "@codemirror/commands";
@@ -14,12 +15,13 @@ export class SourceEditor {
   private numbers = new Compartment();
   private theme = new Compartment();
   private locale = new Compartment();
+  private git = new Compartment();
   private bookmarks = new Map<string, number>();
 
   constructor(element: HTMLElement, changed: (text: string) => void, pasteImage: (file: File) => void) {
     this.view = new EditorView({ parent: element, state: EditorState.create({
       extensions: [
-        history(), markdown(), highlightActiveLine(), search({ top: true }), highlightSelectionMatches(),
+        history(), markdown(), highlightActiveLine(), search({ top: true }), highlightSelectionMatches(), this.git.of([]),
         this.wrapping.of(EditorView.lineWrapping), this.numbers.of(lineNumbers()), this.theme.of([]), this.locale.of([]),
         keymap.of([{ key: "Enter", run: (view) => {
           const selection = view.state.selection.main;
@@ -77,6 +79,9 @@ export class SourceEditor {
       } : {}))] });
   }
   undo(): void { undo(this.view); }
+  setGitBaseline(base: string | null): void {
+    this.view.dispatch({ effects: base === null ? [this.git.reconfigure([])] : [this.git.reconfigure(sourceGitExtensions), gitBaseEffect.of(base)] });
+  }
   redo(): void { redo(this.view); }
   get canUndo(): boolean { return undoDepth(this.view.state) > 0; }
   get canRedo(): boolean { return redoDepth(this.view.state) > 0; }

@@ -40,6 +40,21 @@ body {
 .kmenu { position: absolute; z-index: 50; display: flex; flex-direction: column; min-width: 140px; background: var(--vscode-editorWidget-background, #252526); border: 1px solid var(--md-border); border-radius: 6px; padding: 4px; box-shadow: 0 4px 14px rgba(0,0,0,.35); }
 .kmenu button { border: 0; background: transparent; color: inherit; text-align: left; padding: 5px 10px; border-radius: 4px; cursor: pointer; font-size: 12.5px; }
 .kmenu button:hover { background: var(--vscode-list-hoverBackground, var(--md-hover)); }
+.table-action-menu { position: fixed; width: min(310px, calc(100vw - 16px)); max-height: calc(100vh - 80px); overflow-y: auto; padding: 8px; border-radius: 12px; box-shadow: 0 10px 32px #0004; }
+.table-menu-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 5px 8px 9px; border-bottom: 1px solid var(--md-border); }
+.table-menu-heading strong { font-size: 13px; }
+.table-menu-heading span { color: var(--vscode-descriptionForeground, #999); font-size: 11px; }
+.table-menu-group { padding: 9px 8px 3px; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .07em; color: var(--vscode-descriptionForeground, #999); }
+.table-action-menu button { display: flex; align-items: center; gap: 10px; min-height: 33px; padding: 6px 8px; width: 100%; font-size: 12px; }
+.table-action-menu button svg { flex-shrink: 0; opacity: .8; }
+.table-action-menu kbd { margin-left: auto; font: 10px var(--vscode-font-family, sans-serif); color: var(--vscode-descriptionForeground, #999); white-space: nowrap; }
+.table-action-menu button.table-danger { color: var(--vscode-errorForeground, #e57979); }
+.table-action-menu button:focus-visible, .table-cell-controls button:focus-visible { outline: 2px solid var(--vscode-focusBorder, var(--md-accent)); outline-offset: -2px; }
+.table-cell-controls { position: fixed; z-index: 45; display: flex; align-items: center; gap: 2px; max-width: calc(100vw - 16px); padding: 4px; border: 1px solid var(--md-border); border-radius: 9px; background: var(--vscode-editorWidget-background, #252526); color: var(--vscode-editor-foreground); box-shadow: 0 5px 18px #0003; }
+.table-cell-position { padding: 0 7px; font-size: 10px; color: var(--vscode-descriptionForeground, #999); white-space: nowrap; }
+.table-cell-controls button { display: flex; align-items: center; justify-content: center; width: 29px; height: 28px; flex-shrink: 0; padding: 4px; border: 0; border-radius: 5px; background: transparent; color: inherit; cursor: pointer; }
+.table-cell-controls button:hover { background: var(--vscode-list-hoverBackground, var(--md-hover)); color: var(--md-accent); }
+@media (max-width: 420px) { .table-cell-position { max-width: 80px; overflow: hidden; text-overflow: ellipsis; } }
 .table-picker { position: fixed; z-index: 60; width: min(280px, calc(100vw - 16px)); max-height: calc(100vh - 16px); overflow: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px; border: 1px solid var(--md-border); border-radius: 12px; background: var(--vscode-editorWidget-background, #252526); box-shadow: 0 12px 36px #0005; }
 .table-picker strong { font-size: 14px; }
 .table-size { color: var(--md-accent); font-variant-numeric: tabular-nums; }
@@ -60,16 +75,34 @@ body {
 .table-stepper button:focus-visible { outline: 2px solid var(--vscode-focusBorder, var(--md-accent)); outline-offset: -3px; }
 .table-picker small { color: var(--vscode-descriptionForeground, #999); line-height: 1.5; }
 /* Popover diyalog (bağlantı / görsel) */
-.kdialog { position: fixed; top: 12%; left: 50%; transform: translateX(-50%); z-index: 60; display: flex; flex-direction: column; gap: 8px; min-width: 300px; background: var(--vscode-editorWidget-background, #252526); border: 1px solid var(--md-border); border-radius: 8px; padding: 12px; box-shadow: 0 8px 24px rgba(0,0,0,.4); }
+.kdialog { position: fixed; top: 8px; left: 8px; z-index: 60; display: flex; flex-direction: column; gap: 8px; width: min(320px, calc(100vw - 16px)); max-height: calc(100vh - 16px); overflow: auto; background: var(--vscode-editorWidget-background, #252526); border: 1px solid var(--md-border); border-radius: 8px; padding: 12px; box-shadow: 0 8px 24px rgba(0,0,0,.4); }
 .kdialog-title { font-weight: 600; font-size: 13px; }
 .kdialog label { display: flex; flex-direction: column; gap: 3px; font-size: 12px; opacity: .95; }
 .kdialog input { background: var(--vscode-input-background); color: var(--vscode-input-foreground); border: 1px solid var(--vscode-input-border, var(--md-border)); border-radius: 4px; padding: 5px 8px; font-size: 13px; outline: none; }
 .kdialog input:focus { border-color: var(--vscode-focusBorder, var(--md-accent)); }
 .kdialog-row { display: flex; justify-content: flex-end; gap: 6px; }
+.image-browse { margin-right: auto; white-space: nowrap; }
+.image-browse:hover { background: var(--md-hover); }
 .kdialog-row button { border: 1px solid var(--md-border); background: transparent; color: inherit; border-radius: 5px; padding: 4px 12px; cursor: pointer; font-size: 12.5px; }
 .kdialog-row button.primary { background: var(--vscode-button-background, #0e639c); color: var(--vscode-button-foreground, #fff); border-color: transparent; }
 
 .hidden { display: none !important; }
+
+/* Git decorations are view-only and never enter Markdown serialization. */
+.md-body .git-added, .md-body .git-modified { position: relative; }
+.md-body .git-added::before, .md-body .git-modified::before { content: ""; position: absolute; left: -13px; top: 0; bottom: 0; width: 3px; background: var(--vscode-editorGutter-addedBackground, #2ea043); pointer-events: none; }
+.md-body .git-joined::before { bottom: calc(-1 * var(--git-gap, 0px) - 1px); }
+.md-body .git-modified::before { background: var(--vscode-editorGutter-modifiedBackground, #0078d4); }
+.md-body li.git-added::before, .md-body li.git-modified::before { left: calc(-1.6em - 13px); }
+.md-body li[data-type="taskItem"].git-added::before, .md-body li[data-type="taskItem"].git-modified::before { left: -13px; }
+.md-body img.git-added { border-left: 3px solid var(--vscode-editorGutter-addedBackground, #2ea043); }
+.md-body img.git-modified { border-left: 3px solid var(--vscode-editorGutter-modifiedBackground, #0078d4); }
+.git-deleted-point { display: block; position: relative; height: 0; pointer-events: none; }
+.git-deleted-point::before { content: ""; position: absolute; left: -14px; top: -4px; border-left: 7px solid var(--vscode-editorGutter-deletedBackground, #f14c4c); border-top: 4px solid transparent; border-bottom: 4px solid transparent; }
+.git-source-gutter { width: 10px; }
+.git-gutter-mark { display: block; width: 3px; height: 100%; min-height: 1.2em; background: var(--vscode-editorGutter-modifiedBackground, #0078d4); }
+.git-gutter-mark.git-added { background: var(--vscode-editorGutter-addedBackground, #2ea043); }
+.git-gutter-mark.git-deleted { background: transparent; width: 0; min-height: 0; border-left: 6px solid var(--vscode-editorGutter-deletedBackground, #f14c4c); border-top: 4px solid transparent; border-bottom: 4px solid transparent; }
 
 /* Kaynak */
 #main-row { flex: 1; min-height: 0; display: flex; }
@@ -116,7 +149,7 @@ body {
 .md-body h1 { font-size: 1.7em; border-bottom: 1px solid var(--md-border); padding-bottom: .3em; }
 .md-body h2 { font-size: 1.4em; border-bottom: 1px solid var(--md-border); padding-bottom: .25em; }
 .md-body p { margin: .6em 0; }
-.md-body a { color: var(--md-accent); text-decoration: none; }
+.md-body a { color: var(--md-accent); text-decoration: none; cursor: pointer; }
 .md-body a:hover { text-decoration: underline; }
 .md-body code { background: var(--md-code-bg); border-radius: 4px; padding: 1px 5px; font-size: .9em; font-family: var(--vscode-editor-font-family, monospace); }
 .md-body pre { background: var(--md-code-bg); border: 1px solid var(--md-border); border-radius: 8px; padding: 12px 14px; overflow-x: auto; }

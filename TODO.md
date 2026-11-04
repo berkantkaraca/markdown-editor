@@ -1,4 +1,23 @@
-# Durum — paket-14
+# Durum — paket-25
+
+- [x] Tam satır/sütun seçiminde Delete/Backspace ile kaldırma; gruplu modern Tablo menüsü, hücre üzerinde hızlı işlemler ve Alt+Shift+ok kısayolları.
+
+- [x] Yeni tabloları saf Markdown pipe tablosu, boş paragrafları gerçek boş satırlar olarak yazma; tekrar açılışta boş satırları gösterme. Eski bağımsız HTML tabloları/boş paragrafları Canlı modda sonraki düzenleme/kayıtta Markdown’a dönüştürme.
+
+- [x] Canlı modda biçimli HTML yapıştırma: dış editör HTML normalizasyonu, metin+görsel panosunda metin önceliği, boş HTML için düz metne dönüş; gerçek Windows Ctrl+V testi.
+
+- [x] Liste farklarını madde bazında gösterme, son maddede yazarken önceki kaynak satırlarını koruma; Working Tree/Split kaydırmasında kare bazında güncelleme ve yumuşak takip.
+
+- [x] Tüm modlarda aynı Git farkı; Enter ile değişmeyen kaynak satırlarını koruma, komşu çizgileri birleştirme, Working Tree ve Split için içerik tabanlı çift yönlü kaydırma.
+
+- [x] Son commit'e göre Git değişiklik göstergeleri: Canlı/Okuma görünümünde bölüm kenarı, Kaynak/Split görünümünde satır kenarı; kaydedilmemiş değişiklikler, yeni dosya ve commit sonrası yenileme doğrulandı.
+
+- [x] Canlı modda içindekiler, normal bağlantılar ve WikiLink için el imleci ve Ctrl gerektirmeyen tek tıkla gezinme.
+
+- [x] Görsel/bağlantı pencereleri araç düğmesine hizalı açılır; dosyadan seç, vazgeç ve ekle aynı satırda. Dar ekran ve pencere boyutu değişimi doğrulandı.
+
+- [x] Yerel dosya seçiciyle görsel ekleme, assets içine img-zaman damgası adıyla kopyalama.
+- [x] Kaydetmede kullanılmayan üretilmiş görselleri temizleme; çalışma alanındaki Markdown referanslarını koruma ve geri alma için proje dışında kurtarma kopyası.
 
 - [x] Varsayılan İngilizce, isteğe bağlı Türkçe; VS Code ayarlarından kalıcı dil seçimi, yerelleştirilmiş komut/ayar açıklamaları.
 - [x] berkantkaraca yayıncı/yazar bilgisi, SVG kaynak ve 256×256 PNG eklenti ikonu; eski taslak yedekleri için kimlik geçişi.
