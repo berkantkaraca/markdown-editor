@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src https: data: blob: 'self'; media-src https: data: blob: 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <meta name="theme-color" content="#0d1826">
+  <link rel="icon" href="../assets/icon.png">
+  <title>Karaca MD · Browser Editor</title>
+  <link rel="stylesheet" href="../assets/editor.css">
+  <link rel="stylesheet" href="../assets/katex.css">
+  <link rel="stylesheet" href="../assets/brand.css">
+  <link rel="stylesheet" href="../assets/web.css">
+</head>
+<body class="vscode-dark">
+  <header class="web-top">
+    <a class="web-brand" href="../"><img src="../assets/icon.png" alt="" width="32" height="32"> Karaca MD</a>
+    <div class="web-document">
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M6 3h8l4 4v14H6zM14 3v5h4M9 12h6M9 16h6"/></svg>
+      <span id="web-filename">untitled.md</span>
+    </div>
+    <div class="web-actions">
+      <button id="web-new" type="button" data-web-action data-web-en="New" data-web-tr="Yeni" disabled>New</button>
+      <button id="web-open" type="button" data-web-action disabled>
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M3 7V5h6l2 2h10v12H3z"/></svg>
+        <span data-web-en="Open .md" data-web-tr=".md aç">Open .md</span>
+      </button>
+      <button id="web-download" type="button" data-web-action disabled>
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M12 3v12m-4-4 4 4 4-4M4 16v4h16v-4"/></svg>
+        <span data-web-en="Download .md" data-web-tr=".md indir">Download .md</span>
+      </button>
+      <label>
+        <span class="web-sr-only">Language / Dil</span>
+        <select id="web-language" disabled><option value="en">EN</option><option value="tr">TR</option></select>
+      </label>
+    </div>
+    <input id="web-input" type="file" accept=".md,.markdown,.mdown,.mkd,.txt,text/markdown,text/plain" hidden>
+  </header>
+  <noscript>This editor needs JavaScript to work.</noscript>
+  <!-- editor-layout -->
+  <footer class="web-notice">
+    <span id="web-status" role="status">Loading editor…</span>
+    <span data-web-en="Files stay in your browser" data-web-tr="Dosyaların tarayıcında kalır">Files stay in your browser</span>
+  </footer>
+  <script type="module" src="../assets/browser-entry.js"></script>
+</body>
+</html>

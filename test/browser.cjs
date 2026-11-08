@@ -83,6 +83,28 @@ beforeEach(async () => {
 afterEach(async () => { assert.deepEqual(errors, []); await page.close(); });
 after(async () => { await browser?.close(); await new Promise((resolve) => server?.close(resolve)); });
 
+test("Karaca karşılaştırmasında kaynak farkı ve salt okunur sol panel", async () => {
+  const original = "# Deneme\n\nBirinci paragraf.\n";
+  const modified = "# Deneme\n\nYeni paragraf.\n";
+  await page.evaluate(({original, modified}) => {
+    window.postMessage({proto:1,type:"update",text:modified,version:2,isDirty:false},"*");
+    window.postMessage({proto:1,type:"git-baseline",text:original,side:"modified",paired:true},"*");
+  }, {original, modified});
+  await page.getByRole("tab", { name: "Kaynak" }).click();
+  assert.equal(await page.locator(".comparison-inline").textContent(), "Yeni");
+  await page.locator("#comparison-next").click();
+  assert.ok(await page.evaluate(() => window.__posted.some(message => message.type === "comparison-reveal" && message.line === 2)));
+
+  await page.evaluate(({original, modified}) => {
+    window.postMessage({proto:1,type:"update",text:original,version:3,isDirty:false},"*");
+    window.postMessage({proto:1,type:"git-baseline",text:modified,side:"original",paired:true,mode:"source"},"*");
+  }, {original, modified});
+  await page.locator("body.comparison-original").waitFor();
+  assert.equal(await page.locator(".comparison-inline").textContent(), "Birinci");
+  assert.equal(await page.locator("#formatbar").isVisible(), false);
+  assert.equal(await page.locator(".cm-content").getAttribute("contenteditable"), "false");
+});
+
 test("gerçek klavye: paragraf birleştirme, Enter, kalın yazım, geri alma", async () => {
   const surface = page.locator("#live-root .tiptap");
   await surface.click();
@@ -152,7 +174,7 @@ test("Confluence benzeri HTML başlık, liste, tablo ve kod olarak yapışır",a
   assert.equal(await page.evaluate(()=>window.__posted.filter(m=>m.type==="save-image").length),0);
   await page.evaluate(()=>window.__karacaTest.setMode("source")); await page.evaluate(()=>window.__karacaTest.setMode("live"));
   assert.equal(await root.locator("td").filter({hasText:"Pano hücresi"}).count(),1);
-  await page.screenshot({path:path.join(__dirname,"../out/clipboard-paket-25.png")});
+  await page.screenshot({path:path.join(__dirname,"../out/clipboard-paket-26.png")});
 });
 
 test("boş HTML varsa düz metne döner; yalnız görsel panosu görsel akışını kullanır",async()=>{
@@ -177,7 +199,7 @@ test("örnek belge: tek yüzey, gerçek Mermaid render ve belge görünümü", a
   assert.equal(await page.locator("#live-root textarea, #live-root .block, #live-root .tablebar").count(), 0);
   await page.locator("#live-wrap").evaluate((element) => { element.scrollTop = 0; });
   fs.mkdirSync(path.join(__dirname, "../out"), { recursive: true });
-  await page.screenshot({ path: path.join(__dirname, "../out/editor-paket-25.png") });
+  await page.screenshot({ path: path.join(__dirname, "../out/editor-paket-26.png") });
   await page.getByRole("tab", { name: "Okuma", exact: true }).click();
   await page.getByRole("tab", { name: "Canlı", exact: true }).click();
   assert.equal(await page.locator('#live-root [contenteditable="true"]').count(), 1);
@@ -218,9 +240,9 @@ test("canlı ve okuma: çerçevesiz alan ve görev satırları aynı ölçülerd
     }
     assert.ok(Math.abs(live.tasks[i].box.y - live.tasks[i].content.y) < 7, "kutu metinle aynı satırda");
   }
-  await page.screenshot({ path: path.join(__dirname, "../out/reading-paket-25.png") });
+  await page.screenshot({ path: path.join(__dirname, "../out/reading-paket-26.png") });
   await page.getByRole("tab", { name: "Canlı", exact: true }).click();
-  await page.screenshot({ path: path.join(__dirname, "../out/live-paket-25.png") });
+  await page.screenshot({ path: path.join(__dirname, "../out/live-paket-26.png") });
 });
 
 
@@ -276,13 +298,13 @@ test("referans kod paleti Java ve TypeScript için Canlı/Okuma modlarında ayn�
   assert.equal(live.background, "rgb(40, 40, 40)");
   assert.deepEqual(live.tokens, ["rgb(78, 201, 176)", "rgb(78, 201, 176)", "rgb(220, 220, 170)", "rgb(197, 134, 192)", "rgb(206, 145, 120)", "rgb(86, 156, 214)", "rgb(156, 220, 254)"]);
   assert.deepEqual(live.source.map((source) => source.trimEnd()), [java, ts]);
-  await page.screenshot({ path: path.join(__dirname, "../out/code-live-paket-25.png") });
+  await page.screenshot({ path: path.join(__dirname, "../out/code-live-paket-26.png") });
   await page.getByRole("tab", { name: "Okuma", exact: true }).click();
   const reading = await colors("#reading-root");
   assert.deepEqual(reading.tokens, live.tokens);
   assert.equal(reading.background, live.background);
   assert.deepEqual(reading.source.map((source) => source.trimEnd()), [java, ts]);
-  await page.screenshot({ path: path.join(__dirname, "../out/code-reading-paket-25.png") });
+  await page.screenshot({ path: path.join(__dirname, "../out/code-reading-paket-26.png") });
 });
 
 
@@ -348,7 +370,7 @@ test("araç çubuğu dar ekranda erişilebilir ve simgeler etiketlidir", async (
   assert.equal(await page.evaluate(() => document.body.scrollWidth > innerWidth), false);
   await page.getByRole("tab", { name: "Okuma", exact: true }).click();
   await page.getByRole("tab", { name: "Canlı", exact: true }).click();
-  await page.screenshot({ path: path.join(__dirname, "../out/toolbar-mobile-paket-25.png") });
+  await page.screenshot({ path: path.join(__dirname, "../out/toolbar-mobile-paket-26.png") });
 });
 
 test("IME bileşimi ve Unicode metin kayıtta tek parça korunur", { skip: browserName !== "chromium" }, async () => {
@@ -381,7 +403,7 @@ test("Git renkleri Canlı, Kaynak ve Okuma modlarında görünür; commit sonras
   assert.equal(await page.locator("#live-root .git-deleted-point").count(), 1);
   assert.equal(await page.locator("#live-root .git-added").evaluate(el => getComputedStyle(el,"::before").backgroundColor), "rgb(46, 160, 67)");
   assert.equal(await page.locator("#live-root .git-modified").evaluate(el => getComputedStyle(el,"::before").backgroundColor), "rgb(0, 120, 212)");
-  await page.screenshot({path:path.join(__dirname,"../out/git-live-paket-25.png")});
+  await page.screenshot({path:path.join(__dirname,"../out/git-live-paket-26.png")});
   await page.getByRole("tab", {name:"Kaynak",exact:true}).click();
   await page.locator(".git-source-gutter .git-modified").waitFor();
   assert.ok(await page.locator(".git-source-gutter .git-added").count());
@@ -427,7 +449,7 @@ test("görsel penceresi düğmenin altında açılır; dosya seç, iptal ve ekle
     assert.equal(buttons.length, 3); assert.ok(buttons.every(button => Math.abs(button.y - buttons[0].y) <= 1));
     assert.ok(buttons.every(button => button.right <= box.x + box.width));
   }
-  await page.screenshot({ path: path.join(__dirname, "../out/image-popup-paket-25.png") });
+  await page.screenshot({ path: path.join(__dirname, "../out/image-popup-paket-26.png") });
   await dialog.getByRole("button", { name: "Cancel", exact: true }).click(); assert.equal(await dialog.count(), 0);
 });
 
@@ -444,7 +466,7 @@ test("dil seçimi İngilizce/Türkçe arayüzü değiştirir, belgeyi korur ve y
   await page.getByRole("dialog", { name: "Edit math", exact: true }).getByRole("button", { name: "Cancel", exact: true }).click();
   assert.equal(await page.evaluate(() => window.__karacaTest.sync.text), initialText);
   await page.reload(); await page.getByRole("tab", { name: "Live", exact: true }).waitFor();
-  await page.screenshot({ path: path.join(__dirname, "../out/english-paket-25.png") });
+  await page.screenshot({ path: path.join(__dirname, "../out/english-paket-26.png") });
   await page.evaluate(() => { sessionStorage.setItem("ui-language", "tr"); window.postMessage({ proto: 1, type: "config", language: "tr" }, "*"); });
   await page.getByRole("tab", { name: "Canlı", exact: true }).waitFor();
   await page.getByRole("button", { name: "Tablo", exact: true }).click();
@@ -485,7 +507,7 @@ test("tablo seçici: önizleme, klavye, özel boyut ve dar ekran", async () => {
   assert.equal(await picker.locator(".table-size").innerText(), "4 sütun × 5 satır");
   assert.equal(await picker.locator(".table-grid .selected").count(), 20);
   await page.setViewportSize({ width: 390, height: 800 });
-  await page.screenshot({ path: path.join(__dirname, "../out/table-picker-paket-25.png") });
+  await page.screenshot({ path: path.join(__dirname, "../out/table-picker-paket-26.png") });
   const box = await picker.boundingBox(); assert.ok(box.x >= 0 && box.x + box.width <= 390);
   await page.keyboard.press("Escape"); assert.equal(await picker.count(), 0);
   await page.getByRole("button", { name: "Tablo", exact: true }).click();
@@ -622,7 +644,7 @@ test("tablo üzerinde hızlı işlemler, satır/sütun seçme ve Delete ile silm
   await page.keyboard.press(`${modifier}+z`);assert.equal(await page.locator("#live-root tr").count(),3);
   await cell.click();await page.getByRole("button",{name:"Tablo",exact:true}).click();
   const menu=page.getByRole("menu",{name:"Tablo işlemleri",exact:true});await menu.waitFor();
-  await page.screenshot({path:path.join(__dirname,"../out/table-menu-paket-25.png")});
+  await page.screenshot({path:path.join(__dirname,"../out/table-menu-paket-26.png")});
   await menu.getByRole("menuitem",{name:"Sağa sütun ekle",exact:true}).click();assert.equal(await page.locator("#live-root th").count(),3);
   await page.keyboard.press("Alt+Shift+ArrowDown");assert.equal(await page.locator("#live-root tr").count(),4);
   await page.evaluate(()=>window.__karacaTest.rich.flush());
@@ -644,7 +666,7 @@ test("tablo hızlı işlemleri dar ekranda taşmaz ve yalnız hedef tabloyu düz
   await second.locator("td").first().click();await page.getByRole("button",{name:"Tablo",exact:true}).click();
   const menu=page.getByRole("menu",{name:"Tablo işlemleri",exact:true}),menuBox=await menu.boundingBox();
   assert.ok(menuBox.x>=0&&menuBox.x+menuBox.width<=390);assert.ok(menuBox.y>=0&&menuBox.y+menuBox.height<=780);
-  await page.screenshot({path:path.join(__dirname,"../out/table-mobile-paket-25.png")});
+  await page.screenshot({path:path.join(__dirname,"../out/table-mobile-paket-26.png")});
 });
 
 test("üçüncü satırdan hızlı işlem düğmesine giderken hedef satır korunur", async () => {

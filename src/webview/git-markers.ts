@@ -1,8 +1,8 @@
-import { StateEffect, StateField, RangeSet } from "@codemirror/state";
-import { gutter, GutterMarker } from "@codemirror/view";
+import { StateEffect, StateField, RangeSet, type Range } from "@codemirror/state";
+import { Decoration, type DecorationSet as SourceDecorations, EditorView, gutter, GutterMarker } from "@codemirror/view";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 import { DecorationSet } from "@tiptap/pm/view";
-import { lineChanges, characterChanges, changeForRange, type GitChangeKind } from "../shared/git-diff";
+import { changesForSide, diffHunks, gitLines, characterChanges, changeForRange, type GitChangeKind } from "../shared/git-diff";
 import { t } from "./i18n";
 import { listSource } from "../shared/list-source";
 
@@ -22,33 +22,62 @@ class GitMarker extends GutterMarker {
     mark.title = this.label; mark.setAttribute("aria-label", this.label); return mark;
   }
 }
-export const gitBaseEffect = StateEffect.define<string>();
+export const gitBaseEffect = StateEffect.define<{ text: string; comparison: boolean; originalSide: boolean }>();
 class GitSpacer extends GutterMarker { toDOM(): HTMLElement { return document.createElement("span"); } }
-const sourceGitField = StateField.define<{ base: string; markers: RangeSet<GutterMarker> }>({
-  create: () => ({ base: "", markers: RangeSet.empty }),
+const sourceGitField = StateField.define<{
+  base: string; comparison: boolean; originalSide: boolean; markers: RangeSet<GutterMarker>; decorations: SourceDecorations;
+}>({
+  create: () => ({ base: "", comparison: false, originalSide: false, markers: RangeSet.empty, decorations: Decoration.none }),
   update(previous, tr) {
-    let base = previous.base, changed = tr.docChanged;
-    for (const effect of tr.effects) if (effect.is(gitBaseEffect)) { base = effect.value; changed = true; }
+    let { base, comparison, originalSide } = previous;
+    let changed = tr.docChanged;
+    for (const effect of tr.effects) if (effect.is(gitBaseEffect)) {
+      base = effect.value.text;
+      comparison = effect.value.comparison;
+      originalSide = effect.value.originalSide;
+      changed = true;
+    }
     if (!changed) return previous;
-    const markers = lineChanges(base, tr.newDoc.toString()).flatMap(hunk => {
+    const original = gitLines(base);
+    const decorations: Range<Decoration>[] = [];
+    const markers = changesForSide(base, tr.newDoc.toString(), originalSide).flatMap(hunk => {
       const ranges = [];
       for (let i = hunk.from; i < Math.max(hunk.to, hunk.from + 1); i++) {
         const line = tr.newDoc.line(Math.min(i + 1, tr.newDoc.lines));
         ranges.push(new GitMarker(hunk.kind).range(line.from));
+        if (!comparison || hunk.kind === "deleted") continue;
+        decorations.push(Decoration.line({ class: "comparison-line" }).range(line.from));
+        if (hunk.kind !== "modified") continue;
+        const before = original[hunk.originalFrom + i - hunk.from];
+        // Keep the work per line bounded on large, generated Markdown documents.
+        if (before.length + line.length > 2000) continue;
+        const tokens = /[\p{L}\p{M}\p{N}_]+|\s+|[^\p{L}\p{M}\p{N}_\s]/gu;
+        const beforeWords = before.match(tokens) ?? [];
+        const afterWords = Array.from(line.text.matchAll(tokens));
+        for (const word of diffHunks(beforeWords, afterWords.map(match => match[0]))) {
+          if (word.from === word.to) continue;
+          const from = afterWords[word.from].index;
+          const to = afterWords[word.to]?.index ?? line.length;
+          decorations.push(Decoration.mark({ class: "comparison-inline" }).range(line.from + from, line.from + to));
+        }
       }
       return ranges;
     });
-    return { base, markers: RangeSet.of(markers, true) };
+    return { base, comparison, originalSide, markers: RangeSet.of(markers, true), decorations: Decoration.set(decorations, true) };
   },
 });
-export const sourceGitExtensions = [sourceGitField, gutter({ class: "git-source-gutter", markers: view => view.state.field(sourceGitField).markers,
-  initialSpacer: () => new GitSpacer() })];
+export const sourceGitExtensions = [
+  sourceGitField,
+  EditorView.decorations.from(sourceGitField, value => value.decorations),
+  gutter({ class: "git-source-gutter", markers: view => view.state.field(sourceGitField).markers,
+    initialSpacer: () => new GitSpacer() }),
+];
 
-export function decorateGitPreview(root: HTMLElement, base: string | null, text: string): void {
+export function decorateGitPreview(root: HTMLElement, base: string | null, text: string, originalSide = false): void {
   root.querySelectorAll<HTMLElement>(".git-added,.git-modified,.git-deleted").forEach(element => {element.classList.remove("git-added", "git-modified", "git-deleted", "git-joined");element.style.removeProperty("--git-gap");});
   root.querySelectorAll(".git-deleted-point").forEach(element => element.remove());
   if (base === null) return;
-  const changes=characterChanges(base,text);
+  const changes=characterChanges(base,text,originalSide);
   const blocks = Array.from(root.children).filter(element => element.hasAttribute("data-md-range"));
   for(const block of blocks){if(block.matches("ul,ol"))continue;const [from,to]=block.getAttribute("data-md-range")!.split(":").map(Number);const kind=changeForRange(changes,from,to);if(kind)block.classList.add(`git-${kind}`);}
   const items = listSource(text).items;

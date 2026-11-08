@@ -2,6 +2,7 @@ import { t } from "./i18n";
 import type { Editor } from "@tiptap/core";
 import type { EditorView } from "@codemirror/view";
 import { editTable, setHeadingLevel, togglePrefix, toggleTaskLine } from "../shared/md-utils";
+import { isEmbeddedRasterImage } from "../shared/image-data";
 import type { TableOp } from "../shared/md-utils";
 import { createTablePicker } from "./table-picker";
 import { selectedRect } from "@tiptap/pm/tables";
@@ -110,23 +111,23 @@ export function attachFormatbar(deps: FormatDeps) {
       const input = document.createElement("input"); input.value = value; label.appendChild(input); popup!.appendChild(label); return input;
     });
     const row = document.createElement("div"); row.className = "kdialog-row";
+    const ok = document.createElement("button"); ok.type = "submit"; ok.textContent = t("Ekle"); ok.className = "primary";
     if (kind === "image") {
       const form = popup;
       const browse = document.createElement("button"); browse.type = "button"; browse.className = "image-browse";
       browse.textContent = t("Dosyadan seç…");
       browse.onclick = () => {
-        browse.disabled = true;
-        deps.pickImage(file => { browse.disabled = false; if (popup === form && file) { fields[1].value = file; fields[0].focus(); } });
+        browse.disabled = ok.disabled = true;
+        deps.pickImage(file => { browse.disabled = ok.disabled = false; if (popup === form && file) { fields[1].value = file; fields[0].focus(); } });
       };
       row.appendChild(browse);
     }
     const cancel = document.createElement("button"); cancel.type = "button"; cancel.textContent = t("Vazgeç"); cancel.onclick = close;
-    const ok = document.createElement("button"); ok.type = "submit"; ok.textContent = t("Ekle"); ok.className = "primary";
     row.append(cancel, ok); popup.appendChild(row);
     popup.addEventListener("submit", (event) => {
       event.preventDefault();
       const text = fields[0].value || (kind === "link" ? t("bağlantı") : t("görsel")), url = fields[1].value.trim();
-      if (!url || /^(javascript|vbscript|data):/i.test(url)) { fields[1].focus(); return; }
+      if (ok.disabled || !url || (/^(javascript|vbscript|data):/i.test(url) && !(kind === "image" && isEmbeddedRasterImage(url)))) { fields[1].focus(); return; }
       close();
       if (targetLive) {
         const bookmark = selection as ReturnType<Editor["state"]["selection"]["getBookmark"]>;

@@ -1,3 +1,4 @@
+import { diffHunks, gitLines } from "../shared/git-diff";
 import { t } from "./i18n";
 import { setLanguage, localizeChrome } from "./i18n";
 import codeTheme from "./code-theme.css";
@@ -8,23 +9,22 @@ import { renderPreview, runMermaid, refreshDiagrams } from "./preview";
 import { attachFormatbar } from "./format";
 import { attachTableHover } from "./table-hover";
 import { attachFindbar } from "./search";
-import { createPoster, PROTO } from "./protocol";
+import { createPoster, PROTO, type EditorHost } from "./protocol";
 import { createMarkdown } from "../shared/md-pipeline";
 import { parseFrontmatter, parseHeadings } from "../shared/md-utils";
 import { decorateGitPreview } from "./git-markers";
 import { scrollKey, captureScroll, applyScroll, cancelScroll, type ScrollSurface, type ScrollPosition } from "./comparison-scroll";
 
-declare function acquireVsCodeApi(): {
-  postMessage(message: unknown): void;
-  getState(): { mode?: Mode; recoveryDraft?: string; draft?: LocalDraft; scrollOffsets?: Record<string, number> } | undefined;
-  setState(state: unknown): void;
-};
 type Mode = "live" | "source" | "split" | "reading";
-const vscode = acquireVsCodeApi();
+type ViewState = { mode?: string; recoveryDraft?: string; draft?: LocalDraft; scrollOffsets?: Record<string, number> };
+declare function acquireVsCodeApi(): EditorHost<ViewState>;
+const browserHost = window.__karacaBrowserHost;
+const vscode: EditorHost<ViewState> = browserHost ?? acquireVsCodeApi();
 const post = createPoster((message) => vscode.postMessage(message));
 const $ = (id: string) => document.getElementById(id)!;
 const validMode = (value: unknown): value is Mode => ["live", "source", "split", "reading"].includes(String(value));
-let mode: Mode = validMode(vscode.getState()?.mode) ? vscode.getState()!.mode! : "live";
+const storedMode = vscode.getState()?.mode;
+let mode: Mode = validMode(storedMode) ? storedMode : "live";
 let configured = false;
 let saveAfterComposition = false;
 const compositionMessages: any[] = [];
@@ -51,11 +51,26 @@ let toolbar: ReturnType<typeof attachFormatbar> | undefined;
 let tableHover: ReturnType<typeof attachTableHover> | undefined;
 let find: ReturnType<typeof attachFindbar> | undefined;
 let gitBase: string | null = null;
+let comparisonSide: "original" | "modified" | null = null;
+let pairedComparison = false;
+let changeIndex = -1;
+let changes = diffHunks([], []);
+function updateComparisonNavigation(): void {
+  changes = pairedComparison && comparisonSide === "modified" && gitBase !== null
+    ? diffHunks(gitLines(gitBase), gitLines(sync.text)) : [];
+  changeIndex = -1;
+  $("comparison-nav").classList.toggle("hidden", comparisonSide !== "modified" || !pairedComparison);
+  for (const id of ["comparison-prev", "comparison-next"]) {
+    ($(id) as HTMLButtonElement).disabled = !changes.length;
+  }
+  $("comparison-count").textContent = String(changes.length);
+}
 let gitTimer: ReturnType<typeof setTimeout>;
 function refreshGit(): void {
+  updateComparisonNavigation();
   if (mode === "live") rich.refreshGit();
-  if (mode === "reading") decorateGitPreview(readingRoot, gitBase, sync.text);
-  if (mode === "split") decorateGitPreview(splitRoot, gitBase, sync.text);
+  if (mode === "reading") decorateGitPreview(readingRoot, gitBase, sync.text, comparisonSide === "original");
+  if (mode === "split") decorateGitPreview(splitRoot, gitBase, sync.text, comparisonSide === "original");
 }
 
 const sync = new DocumentSync({
@@ -112,18 +127,19 @@ toolbar = attachFormatbar({
   history: () => mode === "live" ? { undo: rich.editor.can().undo(), redo: rich.editor.can().redo() }
     : { undo: source.canUndo, redo: source.canRedo },
 });
-tableHover = attachTableHover(rich.editor,()=>mode,anchor=>toolbar?.tableMenu(anchor));
+tableHover = attachTableHover(rich.editor,()=>comparisonSide === "original" ? "reading" : mode,anchor=>toolbar?.tableMenu(anchor));
 find = attachFindbar({
   getMode: () => mode,
   getText: () => sync.text,
   applyFullText: (text) => {
+    if (comparisonSide === "original") return;
     if (mode === "live") rich.replaceMarkdown(text);
     else source.view.dispatch({ changes: { from: 0, to: source.view.state.doc.length, insert: text } });
     refreshPreview();
   },
   liveFind: (query, active) => rich.find(query, active),
   liveStep: (index) => rich.focusMatch(index),
-  liveReplace: (index, replacement, all) => rich.replaceMatch(index, replacement, all),
+  liveReplace: (index, replacement, all) => { if (comparisonSide !== "original") rich.replaceMatch(index, replacement, all); },
   roots: { live: liveRoot, reading: readingRoot, split: splitRoot },
 });
 
@@ -149,7 +165,7 @@ function refreshPreview(): void {
   const root = mode === "reading" ? readingRoot : mode === "split" ? splitRoot : null;
   if (!root) return;
   renderPreview(root, sync.text);
-  decorateGitPreview(root, gitBase, sync.text);
+  decorateGitPreview(root, gitBase, sync.text, comparisonSide === "original");
   resolveImages(root);
   if (find?.isOpen()) find.refresh();
 }
@@ -169,6 +185,7 @@ function setMode(next: Mode): void {
     });
   }
   mode = next;
+  if (comparisonSide !== "original") post({ type: "comparison-mode", mode });
   vscode.setState({ ...vscode.getState(), mode });
   for (const name of ["source", "live", "split", "reading"] as Mode[]) {
     const button = $("btn-" + name);
@@ -191,7 +208,7 @@ function setMode(next: Mode): void {
 for (const name of ["source", "live", "split", "reading"] as Mode[]) {
   $("btn-" + name).addEventListener("click", () => setMode(name));
 }
-readingRoot.addEventListener("dblclick", () => setMode("live"));
+readingRoot.addEventListener("dblclick", () => { if (comparisonSide !== "original") setMode("live"); });
 
 function resolveImages(root: HTMLElement): void {
   const missing = new Set<string>();
@@ -206,6 +223,7 @@ function resolveImages(root: HTMLElement): void {
   if (missing.size) post({ type: "resolve-imgs", paths: Array.from(missing) });
 }
 function saveImage(file: File, target: "live" | "source"): void {
+  if (comparisonSide === "original") return;
   if (file.size > 15 * 1024 * 1024) { post({ type: "error", message: t("Görsel 15 MB'tan büyük.") }); return; }
   const nonce = `image-${Date.now()}-${++imageSequence}`;
   pendingImages.set(nonce, target);
@@ -247,6 +265,44 @@ function reveal(line: number): void {
   const element = heading ? Array.from(root.querySelectorAll<HTMLElement>("h1,h2,h3,h4,h5,h6"))
     .find((node) => node.textContent === heading.label) : null;
   element?.scrollIntoView({ block: "center" });
+}
+
+function revealChange(line: number): void {
+  if (mode === "source" || mode === "split") {
+    const target = source.view.state.doc.line(Math.min(source.view.state.doc.lines, line + 1));
+    const block = source.view.lineBlockAt(target.from);
+    const pane = source.view.scrollDOM;
+    pane.scrollTop += source.view.documentTop + block.top - pane.getBoundingClientRect().top - pane.clientHeight / 3;
+    expectedScroll.set(pane, pane.scrollTop);
+  }
+  if (mode === "source") return;
+  let offset = 0;
+  for (let i = 0; i < line; i++) {
+    const next = sync.text.indexOf("\n", offset);
+    if (next < 0) break;
+    offset = next + 1;
+  }
+  const ranges = mode === "live" ? rich.scrollRanges() : Array.from(
+    (mode === "split" ? splitRoot : readingRoot).querySelectorAll<HTMLElement>(":scope > [data-md-range]"),
+    element => ({ element, to: Number(element.getAttribute("data-md-range")!.split(":")[1]) }),
+  );
+  const target = ranges.find(range => range.to > offset) ?? ranges[ranges.length - 1];
+  const pane = mode === "live" ? liveSurface.container : mode === "split" ? splitSurface.container : readingSurface.container;
+  if (target) {
+    pane.scrollTop += target.element.getBoundingClientRect().top - pane.getBoundingClientRect().top - pane.clientHeight / 3;
+    expectedScroll.set(pane, pane.scrollTop);
+  }
+}
+
+for (const [id, step] of [["comparison-prev", -1], ["comparison-next", 1]] as const) {
+  $(id).addEventListener("click", () => {
+    if (!changes.length) return;
+    changeIndex = changeIndex < 0 ? (step > 0 ? 0 : changes.length - 1) : (changeIndex + step + changes.length) % changes.length;
+    const change = changes[changeIndex];
+    $("comparison-count").textContent = `${changeIndex + 1}/${changes.length}`;
+    revealChange(change.from);
+    post({ type: "comparison-reveal", line: change.originalFrom });
+  });
 }
 
 // Preview navigation is delegated once. Read-only mode never changes tasks.
@@ -356,20 +412,20 @@ for (const surface of allSurfaces) {
 
 document.addEventListener("keydown", (event) => {
   if (!(event.ctrlKey || event.metaKey)) return;
-  if (event.key.toLowerCase() === "v" && event.shiftKey && mode === "live" && rich.editor.view.hasFocus() && !rich.composing) {
+  if (comparisonSide === "original" && ["v", "s"].includes(event.key.toLowerCase())) { event.preventDefault(); return; }
+  if (!browserHost && event.key.toLowerCase() === "v" && event.shiftKey && mode === "live" && rich.editor.view.hasFocus() && !rich.composing) {
     event.preventDefault(); event.stopImmediatePropagation();
     const nonce = `plain-paste-${++plainPasteSequence}`;
     rich.bookmark(nonce); pendingPlainPastes.add(nonce); post({type:"read-clipboard-text",nonce});
     return;
   }
-  if (event.key.toLowerCase() === "s") { event.preventDefault(); if (mode === "live" ? rich.prepareSave() : rich.flush()) sync.save(); else saveAfterComposition = true; }
+  if (!browserHost && event.key.toLowerCase() === "s") { event.preventDefault(); if (mode === "live" ? rich.prepareSave() : rich.flush()) sync.save(); else saveAfterComposition = true; }
   if (event.key.toLowerCase() === "f" && !event.defaultPrevented && mode !== "source" && !(mode === "split" && source.view.hasFocus)) {
     event.preventDefault(); find?.openFind();
   }
 }, true);
 window.addEventListener("blur", () => { rich.flush(); sync.flush(); });
-window.addEventListener("message", (event) => {
-  const message = event.data;
+function receiveMessage(message: any): void {
   if (!message || (message.proto !== undefined && message.proto !== PROTO)) return;
   if (["update", "edit-result", "save-result", "git-baseline"].includes(message.type) && rich.composing) { compositionMessages.push(message); return; }
   if (typeof message.session === "string" && message.session !== sync.session) return;
@@ -395,8 +451,23 @@ window.addEventListener("message", (event) => {
   } else if (message.type === "save-result") {
     rich.flush(); sync.saved(message.requestId, message, !!message.success);
   } else if (message.type === "git-baseline") {
+    const side = message.side === "original" || message.side === "modified" ? message.side : null;
+    if (side !== comparisonSide) {
+      comparisonSide = side;
+      document.body.classList.toggle("comparison-original", side === "original");
+      document.body.classList.toggle("comparison-modified", side === "modified");
+      rich.editor.setEditable(side !== "original", false);
+      source.setReadOnly(side === "original");
+      tableHover?.hide();
+    }
+    pairedComparison = message.paired === true;
+    if (side === "original" && validMode(message.mode) && mode !== message.mode) setMode(message.mode);
     gitBase = typeof message.text === "string" ? message.text : null;
-    source.setGitBaseline(gitBase); rich.setGitBaseline(gitBase); refreshGit();
+    source.setGitBaseline(gitBase, pairedComparison, side === "original");
+    rich.setGitBaseline(gitBase, side === "original");
+    refreshGit();
+  } else if (message.type === "comparison-reveal" && Number.isSafeInteger(message.line) && message.line >= 0) {
+    revealChange(message.line);
   } else if (message.type === "draft-state") {
     const draft = message.draft as LocalDraft | null;
     const local = vscode.getState()?.draft;
@@ -410,7 +481,8 @@ window.addEventListener("message", (event) => {
     const recovery = vscode.getState()?.recoveryDraft;
     if (recovery !== undefined) showRecovery(recovery);
     wrap = message.wordWrap !== false; numbers = message.lineNumbers !== false; theme();
-    if (!configured) { setMode(vscode.getState()?.mode || (validMode(message.defaultMode) ? message.defaultMode : "live")); configured = true; }
+    const savedMode = vscode.getState()?.mode;
+    if (!configured) { setMode(validMode(savedMode) ? savedMode : validMode(message.defaultMode) ? message.defaultMode : "live"); configured = true; }
   } else if (message.type === "image-picked") {
     const done = imagePickers.get(message.nonce); imagePickers.delete(message.nonce);
     done?.(typeof message.path === "string" ? message.path : "");
@@ -429,22 +501,36 @@ window.addEventListener("message", (event) => {
     for (const [path, uri] of Object.entries(message.map || {})) if (typeof uri === "string") images.set(path, uri);
     for (const root of [liveRoot, readingRoot, splitRoot]) resolveImages(root);
   } else if (message.type === "reveal-line") reveal(Math.max(0, Number(message.line) || 0));
+}
+if (!browserHost) window.addEventListener("message", (event) => receiveMessage(event.data));
+browserHost?.connect({
+  receive: receiveMessage,
+  prepare: () => (mode === "live" ? rich.prepareSave() : rich.flush()) ? sync.text : undefined,
+  replace: (text, version) => {
+    pendingImages.clear(); imagePickers.clear(); images.clear();
+    document.querySelector<HTMLDialogElement>(".source-dialog")?.close();
+    sync.reset({ text, version, isDirty: false });
+    source.reset(sync.text); rich.load(sync.text, true);
+    setMode(mode);
+    for (const surface of allSurfaces) surface.container.scrollTop = 0;
+  },
+  reveal,
 });
 new MutationObserver(theme).observe(document.body, { attributes: true, attributeFilter: ["class"] });
 liveRoot.addEventListener("compositionend", () => {
   const drain = () => {
     if (rich.composing) { setTimeout(drain, 25); return; }
     rich.flush();
-    for (const message of compositionMessages.splice(0)) window.dispatchEvent(new MessageEvent("message", { data: message }));
+    for (const message of compositionMessages.splice(0)) receiveMessage(message);
     if (saveAfterComposition) { saveAfterComposition = false; sync.save(); }
   };
   setTimeout(drain, 0);
 });
-window.addEventListener("pagehide", () => { clearTimeout(gitTimer); cancelAnimationFrame(scrollFrame); for(const surface of allSurfaces) cancelScroll(surface.container); rich.flush(); sync.flush(); sync.dispose(); tableHover?.destroy(); rich.destroy(); source.view.destroy(); });
+window.addEventListener("pagehide", (event) => { rich.flush(); sync.flush(); if (event.persisted) return; clearTimeout(gitTimer); clearTimeout(previewTimer); cancelAnimationFrame(scrollFrame); for(const surface of allSurfaces) cancelScroll(surface.container); sync.dispose(); tableHover?.destroy(); rich.destroy(); source.view.destroy(); });
 theme(); setMode(mode);
 const recovery = vscode.getState()?.recoveryDraft ?? vscode.getState()?.draft?.text;
 if (recovery) showRecovery(recovery);
-post({ type: "ready" });
+post({ type: "ready", mode });
 
 // Eliminated from production builds; integration tests exercise real transactions.
 declare const __TEST__: boolean;

@@ -181,7 +181,7 @@ describe("belge motoru: tek yüzey", () => {
     assert.equal(root().querySelectorAll('[contenteditable="true"]').length, 1);
     assert.equal(root().querySelectorAll(".block, textarea, .tablebar").length, 0);
     assert.equal(root().querySelector("h1").textContent, "Başlık");
-    assert.equal(doc.querySelector("#pkgmark").textContent, "paket-25");
+    assert.equal(doc.querySelector("#pkgmark").textContent, "paket-29");
   });
   it("odak kaybı kaynağı normalize etmez", async () => {
     load("Başlık\n======\n\n*   madde\n\n");
@@ -317,10 +317,10 @@ describe("Markdown ve modlar", () => {
     assert.match(text, /title: Örnek/); assert.ok(text.includes("$x^2$")); assert.ok(text.includes("$$a+b$$"));
     assert.ok(text.includes("[[Not|Etiket]]")); assert.match(text, /```mermaid\ngraph TD; A-->B;/);
   });
-  it("göreli görsellerin webview adresini dosyaya yazmaz", async () => {
+  it("göreli görsellerin webview adresini dosyaya yazmaz", () => {
     load("![Deneme](assets/a.png)\n\nSon");
     send({ type: "img-uris", map: { "assets/a.png": "https://webview.example/a.png" } });
-    select("Son"); type("Yeni son"); await pause();
+    select("Son"); type("Yeni son"); app.rich.flush(); app.sync.flush();
     assert.ok(edits()[0].text.includes("assets/a.png")); assert.ok(!edits()[0].text.includes("webview.example"));
   });
   it("kaynak değişikliği canlıya taşınır ve salt mod geçişi kaydetmez", async () => {

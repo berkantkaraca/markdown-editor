@@ -32,7 +32,7 @@ exports.run = async () => {
       if (command.type === "open-diff") {
         await vscode.workspace.getConfiguration("workbench").update("diffEditorAssociations", {"*.md":"karaca.mdEditor"}, vscode.ConfigurationTarget.Global);
         const modified = vscode.Uri.file(file);
-        const original = modified.with({scheme:"git",query:JSON.stringify({path:modified.fsPath,ref:"HEAD"})});
+        const original = modified.with({scheme:"git",query:JSON.stringify({path:modified.fsPath,ref:"HEAD~1"})});
         await vscode.commands.executeCommand("vscode.diff",original,modified,"Working Tree",{preview:false,override:"karaca.mdEditor"});
         fs.writeFileSync(path.join(directory,"diff-open"),"ready");
       }

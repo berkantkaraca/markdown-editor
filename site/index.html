@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Karaca MD ile tarayıcıda veya VS Code’da Markdown dosyalarını aç, görsel olarak düzenle ve indir.">
+  <meta name="theme-color" content="#0d1826">
+  <link rel="icon" href="./assets/icon.png">
+  <link rel="stylesheet" href="./assets/brand.css">
+  <link rel="stylesheet" href="./assets/landing.css">
+  <title>Karaca MD — Tarayıcı ve VS Code için Markdown editörü</title>
+</head>
+<body>
+  <a class="skip" href="#main">İçeriğe geç</a>
+  <header class="site-header">
+    <div class="shell header-inner">
+      <a class="brand" href="./"><img src="./assets/icon.png" alt="" width="40" height="40"> Karaca MD</a>
+      <nav aria-label="Ana menü">
+        <a href="#demo">Demo</a>
+        <a href="https://github.com/berkantkaraca/markdown-editor">GitHub <span aria-hidden="true">↗</span></a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main" tabindex="-1">
+    <section class="shell hero" aria-labelledby="hero-title">
+      <p class="eyebrow"><span aria-hidden="true"></span> Tarayıcı ve VS Code için Markdown</p>
+      <h1 id="hero-title">Markdown belgelerini<br class="hero-break"> <em>görsel olarak düzenle.</em></h1>
+      <p>Başlıkları, listeleri ve tabloları doğrudan belge üzerinde düzenle. Kaynağı görmek için mod değiştir, işin bitince dosyanı Markdown olarak indir.</p>
+      <div class="actions">
+        <a class="button primary" href="./editor/">Tarayıcıda düzenle <span aria-hidden="true">→</span></a>
+        <a class="button secondary" href="https://marketplace.visualstudio.com/items?itemName=berkantkaraca.karaca-md-editor">VS Code’a ekle <span aria-hidden="true">↗</span></a>
+      </div>
+    </section>
+
+    <section class="shell showcase" id="demo" aria-labelledby="demo-title">
+      <div class="showcase-heading">
+        <h2 id="demo-title">Bir belge, dört görünüm</h2>
+        <p>Görünümler arasında geçiş yapmak için bir mod seç.</p>
+      </div>
+      <figure class="demo">
+        <div class="demo-header">
+          <span class="filename"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M6 3h8l4 4v14H6zM14 3v5h4M9 12h6M9 16h6"/></svg> ekip-notlari.md</span>
+          <div class="demo-modes" id="demo-modes" role="group" aria-label="Örnek belge görünümleri" hidden>
+            <button type="button" data-mode="live" aria-pressed="false" aria-controls="demo-panel">Live</button>
+            <button type="button" data-mode="source" aria-pressed="false" aria-controls="demo-panel">Source</button>
+            <button type="button" data-mode="split" aria-pressed="true" aria-controls="demo-panel">Split</button>
+            <button type="button" data-mode="reading" aria-pressed="false" aria-controls="demo-panel">Reading</button>
+          </div>
+        </div>
+        <div class="demo-panel is-split" id="demo-panel">
+          <div class="demo-pane demo-source" id="demo-source">
+            <p class="pane-label">Markdown kaynağı</p>
+            <pre><code><span class="syntax"># Sürüm notları</span>
+
+<span class="syntax">**Sıradaki adım:**</span> Taslağı ekiple paylaş.
+
+- [x] Kurulum adımlarını güncelle
+- [ ] Değişiklikleri gözden geçir</code></pre>
+          </div>
+          <div class="demo-pane" id="demo-rendered">
+            <p class="pane-label" id="preview-label">Önizleme</p>
+            <p class="sample-title">Sürüm notları</p>
+            <p><strong>Sıradaki adım:</strong> Taslağı ekiple paylaş.</p>
+            <ul class="sample-list">
+              <li><span class="sample-check checked" aria-hidden="true">✓</span><span class="sr-only">Tamamlandı.</span> Kurulum adımlarını güncelle</li>
+              <li><span class="sample-check" aria-hidden="true"></span><span class="sr-only">Bekliyor.</span> Değişiklikleri gözden geçir</li>
+            </ul>
+          </div>
+        </div>
+        <figcaption id="demo-caption" role="status">Split ile Markdown kaynağını ve önizlemeyi birlikte gör.</figcaption>
+      </figure>
+    </section>
+
+    <section class="shell features" aria-labelledby="features-title">
+      <h2 id="features-title">Günlük belgelerin için</h2>
+      <div class="feature-grid">
+        <article><p class="feature-number" aria-hidden="true">01</p><h3>Biçimi koru</h3><p>Confluence ve web sayfalarından aldığın başlıkları, listeleri, bağlantıları ve tabloları Markdown’a aktar.</p></article>
+        <article><p class="feature-number" aria-hidden="true">02</p><h3>Belgeyi zenginleştir</h3><p>Tablo, görsel, formül ve Mermaid diyagramı ekle. Tabloları hücrelerin üzerindeki kısayollarla düzenle.</p></article>
+        <article><p class="feature-number" aria-hidden="true">03</p><h3>Taslağı yerelde tut</h3><p>Tarayıcı taslağını bu cihazda saklar. Dosyayı istediğin zaman indirip başka bir yerde açabilirsin.</p></article>
+      </div>
+    </section>
+
+    <section class="shell" aria-labelledby="start-title">
+      <div class="closing">
+        <div><h2 id="start-title">İlk belgeni aç</h2><p>Bilgisayarından bir Markdown dosyası seç veya boş bir belgeyle başla.</p></div>
+        <a class="button primary" href="./editor/">Editörü aç <span aria-hidden="true">→</span></a>
+      </div>
+    </section>
+  </main>
+
+  <footer class="shell footer">
+    <span>Karaca MD</span>
+    <a href="https://berkantkaraca.com/">Berkant Karaca <span aria-hidden="true">↗</span></a>
+  </footer>
+
+  <script>
+    const modes = document.getElementById('demo-modes');
+    const panel = document.getElementById('demo-panel');
+    const source = document.getElementById('demo-source');
+    const preview = document.getElementById('demo-rendered');
+    const previewLabel = document.getElementById('preview-label');
+    const caption = document.getElementById('demo-caption');
+    const views = {
+      live: ['Görsel düzenleme', 'Live ile belgeyi biçimlendirilmiş görünümde düzenle.'],
+      source: ['', 'Source ile Markdown sözdizimini doğrudan düzenle.'],
+      split: ['Önizleme', 'Split ile Markdown kaynağını ve önizlemeyi birlikte gör.'],
+      reading: ['Okuma görünümü', 'Reading ile belgeyi salt okunur görüntüle.']
+    };
+    modes.hidden = false;
+    modes.addEventListener('click', (event) => {
+      const selected = event.target.closest('button[data-mode]');
+      if (!selected) return;
+      const mode = selected.dataset.mode;
+      for (const button of modes.querySelectorAll('button')) {
+        button.setAttribute('aria-pressed', String(button === selected));
+      }
+      source.hidden = mode === 'live' || mode === 'reading';
+      preview.hidden = mode === 'source';
+      panel.classList.toggle('is-split', mode === 'split');
+      previewLabel.textContent = views[mode][0];
+      caption.textContent = views[mode][1];
+    });
+  </script>
+</body>
+</html>

@@ -274,10 +274,63 @@ class KaracaBacklinkProvider implements vscode.TreeDataProvider<vscode.TreeItem>
   }
 }
 
+interface ComparisonPanel {
+  uri: vscode.Uri;
+  panel: vscode.WebviewPanel;
+  document: vscode.TextDocument;
+  gitBase: string | null;
+  mode?: string;
+}
+
 class KaracaMarkdownProvider implements vscode.CustomTextEditorProvider {
   // Açık paneller (reveal-line / outline navigasyonu için uri -> panel)
   readonly panels = new Map<string, vscode.WebviewPanel>();
-  private comparisonPanels = new Set<{ uri: vscode.Uri; panel: vscode.WebviewPanel }>();
+  private comparisonPanels = new Set<ComparisonPanel>();
+
+  private comparison(entry: ComparisonPanel): { peer: ComparisonPanel; side: "original" | "modified" } | undefined {
+    if (!entry.panel.visible) return;
+    const peers = [...this.comparisonPanels].filter(peer => peer !== entry && peer.panel.visible &&
+      peer.panel.viewColumn === entry.panel.viewColumn);
+    const tab = vscode.window.tabGroups.all.find(group => group.viewColumn === entry.panel.viewColumn)?.activeTab;
+    const input = tab?.input;
+    if (input instanceof vscode.TabInputTextDiff) {
+      for (const side of ["original", "modified"] as const) {
+        if (entry.uri.toString() !== input[side].toString()) continue;
+        const other = input[side === "original" ? "modified" : "original"];
+        const peer = peers.find(candidate => candidate.uri.toString() === other.toString());
+        if (peer) return { peer, side };
+      }
+      return;
+    }
+
+    // Older hosts may expose the two custom editors without a text-diff tab input.
+    const filePath = (uri: vscode.Uri) => {
+      if (uri.scheme === "git") {
+        try {
+          const query = JSON.parse(uri.query);
+          if (typeof query.path === "string") return path.normalize(query.path);
+        } catch { /* Fall back to the URI path. */ }
+      }
+      return path.normalize(uri.fsPath);
+    };
+    const matches = peers.filter(peer =>
+      ((entry.uri.scheme === "git" && peer.uri.scheme === "file") ||
+       (entry.uri.scheme === "file" && peer.uri.scheme === "git")) &&
+      filePath(entry.uri) === filePath(peer.uri));
+    if (matches.length === 1) return { peer: matches[0], side: entry.uri.scheme === "git" ? "original" : "modified" };
+  }
+
+  private postComparison(entry: ComparisonPanel): void {
+    const comparison = this.comparison(entry);
+    void entry.panel.webview.postMessage({
+      proto: PROTO, type: "git-baseline",
+      text: comparison ? comparison.peer.document.getText() : entry.gitBase,
+      side: comparison?.side ?? (entry.uri.scheme === "git" ? "original" : null),
+      paired: !!comparison,
+      mode: comparison?.side === "original" ? comparison.peer.mode : undefined,
+    });
+  }
+
   // Sürüm tarihçesi (çakışan yazımlarda üç-yönlü birleştirme için uri -> version -> metin)
   private readonly docVersions = new Map<string, Map<number, string>>();
 
@@ -392,16 +445,16 @@ class KaracaMarkdownProvider implements vscode.CustomTextEditorProvider {
 
     webviewPanel.webview.html = this.getHtml(webviewPanel.webview);
     this.panels.set(document.uri.toString(), webviewPanel);
-    const comparisonPanel = { uri: document.uri, panel: webviewPanel };
+    const comparisonPanel: ComparisonPanel = { uri: document.uri, panel: webviewPanel, document, gitBase: null };
     this.comparisonPanels.add(comparisonPanel);
     this.recordVersion(document.uri, document.version, document.getText());
 
     const requests = new RequestQueue();
-    let gitBase: string | null = null, gitWatcher: vscode.Disposable | undefined, panelDisposed = false;
+    let gitWatcher: vscode.Disposable | undefined, panelDisposed = false;
     void watchGitBaseline(document.uri, text => {
-      gitBase = text; void webviewPanel.webview.postMessage({ proto: PROTO, type: "git-baseline", text });
+      comparisonPanel.gitBase = text; this.postComparison(comparisonPanel);
     }).then(watcher => { if (panelDisposed) watcher.dispose(); else gitWatcher = watcher; }).catch(() => {
-      gitBase = null; if (!panelDisposed) void webviewPanel.webview.postMessage({ proto: PROTO, type: "git-baseline", text: null });
+      comparisonPanel.gitBase = null; if (!panelDisposed) this.postComparison(comparisonPanel);
     });
     const draftKey = document.uri.toString();
     let draftWarningShown = false;
@@ -437,8 +490,15 @@ class KaracaMarkdownProvider implements vscode.CustomTextEditorProvider {
       if (e.document.uri.toString() === document.uri.toString()) {
         this.recordVersion(document.uri, e.document.version, e.document.getText());
         updateWebview();
+        const comparison = this.comparison(comparisonPanel);
+        if (comparison) this.postComparison(comparison.peer);
       }
     });
+    const refreshComparison = () => {
+      if (webviewPanel.visible) this.postComparison(comparisonPanel);
+    };
+    const visibilitySub = webviewPanel.onDidChangeViewState(refreshComparison);
+    const tabsSub = vscode.window.tabGroups.onDidChangeTabs(refreshComparison);
     const saveSub = vscode.workspace.onDidSaveTextDocument((saved) => {
       if (saved.uri.toString() === document.uri.toString()) {
         updateWebview(); void this.drafts.clear(draftKey, saved.getText()).catch(draftError);
@@ -455,6 +515,8 @@ class KaracaMarkdownProvider implements vscode.CustomTextEditorProvider {
       changeSub.dispose();
       saveSub.dispose();
       configSub.dispose();
+      visibilitySub.dispose();
+      tabsSub.dispose();
       this.comparisonPanels.delete(comparisonPanel);
       if (this.panels.get(document.uri.toString()) === webviewPanel) {
         const remaining = Array.from(this.comparisonPanels).filter(entry => entry.uri.toString() === document.uri.toString());
@@ -484,22 +546,32 @@ class KaracaMarkdownProvider implements vscode.CustomTextEditorProvider {
           const position = msg.position;
           if (!position || !Number.isFinite(position.progress) || !Array.isArray(position.anchors) || position.anchors.length > 10) break;
           if (!position.anchors.every((a: any) => typeof a.key === "string" && a.key.length < 64 && Number.isInteger(a.occurrence) && a.occurrence >= 0 && Number.isFinite(a.offset) && (a.fraction === null || Number.isFinite(a.fraction) && a.fraction >= 0 && a.fraction <= 1))) break;
-          const filePath = (uri: vscode.Uri) => {
-            if (uri.scheme === "git") { try { const query = JSON.parse(uri.query); if (typeof query.path === "string") return path.normalize(query.path); } catch {} }
-            return path.normalize(uri.fsPath);
-          };
-          for (const peer of this.comparisonPanels) {
-            if (peer === comparisonPanel || !peer.panel.visible || !webviewPanel.visible) continue;
-            if (!([document.uri.scheme,peer.uri.scheme].includes("git") && [document.uri.scheme,peer.uri.scheme].includes("file"))) continue;
-            if (filePath(document.uri) !== filePath(peer.uri) || peer.panel.viewColumn !== webviewPanel.viewColumn) continue;
-            void peer.panel.webview.postMessage({proto:PROTO,type:"scroll-sync",position:{progress:Math.max(0,Math.min(1,position.progress)),anchors:position.anchors.map((a: any)=>({key:a.key,occurrence:a.occurrence,offset:a.offset,fraction:a.fraction}))}});
+          const comparison = this.comparison(comparisonPanel);
+          if (comparison) void comparison.peer.panel.webview.postMessage({ proto: PROTO, type: "scroll-sync", position });
+          break;
+        }
+        case "comparison-mode": {
+          if (!["live", "source", "split", "reading"].includes(msg.mode)) break;
+          comparisonPanel.mode = msg.mode;
+          const comparison = this.comparison(comparisonPanel);
+          if (comparison?.side === "modified") this.postComparison(comparison.peer);
+          break;
+        }
+        case "comparison-reveal": {
+          const comparison = this.comparison(comparisonPanel);
+          if (comparison?.side === "modified" && Number.isSafeInteger(msg.line) && msg.line >= 0) {
+            void comparison.peer.panel.webview.postMessage({ proto: PROTO, type: "comparison-reveal", line: msg.line });
           }
           break;
         }
         case "ready": {
+          if (["live", "source", "split", "reading"].includes(msg.mode)) comparisonPanel.mode = msg.mode;
           postConfig();
           updateWebview();
-          void webviewPanel.webview.postMessage({ proto: PROTO, type: "git-baseline", text: gitBase });
+          this.postComparison(comparisonPanel);
+          const comparison = this.comparison(comparisonPanel);
+          if (comparison) this.postComparison(comparison.peer);
+          if (document.uri.scheme === "git" || comparison?.side === "original") break;
           const draft = await this.drafts.read(draftKey);
           if (draft && !document.isDirty && normalizeNewlines(draft.text) === normalizeNewlines(document.getText())) {
             await this.drafts.clear(draftKey, document.getText()).catch(draftError);
@@ -519,6 +591,7 @@ class KaracaMarkdownProvider implements vscode.CustomTextEditorProvider {
         }
         case "edit":
         case "save": {
+          if (document.uri.scheme === "git" || this.comparison(comparisonPanel)?.side === "original") break;
           if (typeof msg.text !== "string" || typeof msg.requestId !== "number" || typeof msg.session !== "string") break;
           const result = await requests.execute(msg, async () => {
             if (msg.type === "save") { const success = await document.save(); return { ...snapshot(), success }; }

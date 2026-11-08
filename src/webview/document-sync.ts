@@ -33,6 +33,15 @@ export class DocumentSync {
   constructor(private readonly options: SyncOptions) {
     this.session = options.sessionId || globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`;
   }
+  reset(snapshot: DocumentSnapshot): void {
+    this.dispose();
+    this.flight = this.deferred = null;
+    this.saveRequested = this.hasDraft = this.blocked = false;
+    this.base = { ...snapshot, text: normalizeNewlines(snapshot.text) };
+    this.text = this.base.text;
+    this.options.status(false);
+    this.options.stateChanged?.("idle");
+  }
   edit(text: string): void {
     text = normalizeNewlines(text);
     if (text === this.text) return;

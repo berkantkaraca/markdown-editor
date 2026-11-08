@@ -25,6 +25,11 @@
     <button type="button" data-cmd="mermaid" title="Diyagram" aria-label="Diyagram"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="2" width="8" height="5" rx="1"/><rect x="1" y="17" width="8" height="5" rx="1"/><rect x="15" y="17" width="8" height="5" rx="1"/><path d="M12 7v5M5 17v-5h14v5"/></svg></button>
   </div>
   </div>
+  <div id="comparison-nav" class="seg hidden" role="group" aria-label="Karşılaştırma">
+    <button id="comparison-prev" type="button" title="Önceki değişiklik" aria-label="Önceki değişiklik">↑</button>
+    <span id="comparison-count" aria-live="polite"></span>
+    <button id="comparison-next" type="button" title="Sonraki değişiklik" aria-label="Sonraki değişiklik">↓</button>
+  </div>
   <span id="dirty" title="Kaydedilmemiş değişiklik"></span>
   <div class="seg" role="tablist" aria-label="Mod">
     <button id="btn-source" data-mode="source" title="Kaynak (ham markdown)">Kaynak</button>
@@ -32,7 +37,7 @@
     <button id="btn-split" data-mode="split" title="Split (kaynak + önizleme)">Split</button>
     <button id="btn-reading" data-mode="reading" title="Okuma (salt okunur önizleme)">Okuma</button>
   </div>
-  <span id="pkgmark" title="Derleme paketi">paket-25</span>
+  <span id="pkgmark" title="Derleme paketi">paket-29</span>
 </div>
 <div id="sync-alert" class="document-notice hidden" role="status"><span id="sync-message"></span><button id="sync-retry" type="button">Yeniden dene</button></div>
 <div id="findbar" class="hidden">

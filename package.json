@@ -2,7 +2,7 @@
   "name": "karaca-md-editor",
   "displayName": "Karaca MD",
   "description": "%description%",
-  "version": "0.1.25",
+  "version": "0.1.29",
   "publisher": "berkantkaraca",
   "license": "MIT",
   "repository": {
@@ -23,6 +23,11 @@
   ],
   "main": "./dist/extension.js",
   "contributes": {
+    "configurationDefaults": {
+      "workbench.diffEditorAssociations": {
+        "*.md": "default"
+      }
+    },
     "customEditors": [
       {
         "viewType": "karaca.mdEditor",
@@ -130,6 +135,9 @@
   },
   "scripts": {
     "compile": "node esbuild.js",
+    "build:web": "node site/build.cjs",
+    "preview:web": "node site/serve.cjs",
+    "test:web": "npm run build:web && node --test test/web-app.cjs",
     "watch": "node esbuild.js --watch",
     "vscode:prepublish": "node esbuild.js --production",
     "lint": "tsc --noEmit",

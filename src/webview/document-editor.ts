@@ -92,7 +92,7 @@ const DocumentImage = Image.extend({
       return { dom, ignoreMutation: () => true };
     };
   },
-});
+}).configure({ allowBase64: true });
 
 function importMarkdown(text: string, sourceMap = false): string {
   // Parse in an inert document, extract source before sanitization, then sanitize
@@ -167,6 +167,7 @@ export class DocumentEditor {
   private bookmarks = new Map<string, SelectionBookmark>();
   private matches: { from: number; to: number }[] = [];
   private query: RegExp | null = null;
+  private originalDiffSide = false;
   private gitBase: string | null = null;
   private activeMatch = 0;
 
@@ -261,7 +262,8 @@ export class DocumentEditor {
       return element instanceof HTMLElement ? [{ from: range.from, to: range.to, element }] : [];
     });
   }
-  setGitBaseline(base: string | null): void {
+  setGitBaseline(base: string | null, originalSide = false): void {
+    this.originalDiffSide = originalSide;
     this.gitBase = base;
     this.refreshGit();
   }
@@ -270,7 +272,7 @@ export class DocumentEditor {
     if (this.pending && !this.flush()) return;
     const doc = this.editor.state.doc, marks: Decoration[] = [];
     if (this.gitBase !== null) {
-      const changes = characterChanges(this.gitBase, this.markdown), positions = new Map<DocumentNode, number>();
+      const changes = characterChanges(this.gitBase, this.markdown, this.originalDiffSide), positions = new Map<DocumentNode, number>();
       doc.forEach((node, position) => positions.set(node, position));
       const ranges = this.provenance.sourceRanges(doc).filter(range => positions.has(range.node)).sort((a,b) => a.from-b.from);
       for (const hunk of changes) {
@@ -343,11 +345,11 @@ export class DocumentEditor {
     return this.provenance.render(doc, (node) => this.serializeNode(node));
   }
 
-  load(markdown: string): void {
+  load(markdown: string, reset = false): void {
     markdown = normalizeNewlines(markdown);
     this.flush();
-    if (markdown === this.markdown) return;
-    const { from, to } = this.editor.state.selection;
+    if (!reset && markdown === this.markdown) return;
+    const { from, to } = reset ? { from: 0, to: 0 } : this.editor.state.selection;
     this.markdown = markdown;
     // Loading another revision resets native history; undo may never resurrect another revision.
     this.bookmarks.clear();

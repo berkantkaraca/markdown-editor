@@ -1,0 +1,11 @@
+*
+!Dockerfile
+!package.json
+!package-lock.json
+!site/
+!site/**
+!src/
+!src/**
+!media/
+!media/style.css
+!media/icon.png

@@ -65,13 +65,15 @@ describe("belge kayıt senkronizasyonu", () => {
 
 
 describe("Windows kayıt yanıtı", () => {
-  it("yanıt kesilirse aynı kimlikle tekrarlar, sınırdan sonra elle devam eder", async () => {
+  it("yanıt kesilirse aynı kimlikle tekrarlar, sınırdan sonra elle devam eder", (test) => {
+    test.mock.timers.enable({ apis: ["setTimeout"] });
     const messages: any[] = [], states: string[] = [], drafts: any[] = [];
     const sync = new DocumentSync({ send: m => messages.push(m), changed: () => {}, status: () => {}, recover: () => {},
       ackTimeoutMs: 5, maxRetries: 1, stateChanged: s => states.push(s), draftChanged: d => drafts.push(d) });
     try {
       sync.receive({ text: "ilk", version: 1 }); sync.edit("son"); sync.flush();
-      await new Promise(resolve => setTimeout(resolve, 45));
+      test.mock.timers.tick(5);
+      test.mock.timers.tick(10);
       assert.equal(messages.length, 2); assert.deepEqual(messages[0], messages[1]); assert.equal(states.at(-1), "blocked");
       sync.retry(); assert.deepEqual(messages[2], messages[0]);
       sync.acknowledge(1, { text: "son", version: 2, isDirty: true });

@@ -325,3 +325,19 @@ mark.find-hit.current { background: var(--vscode-editor-findMatchHighlightBackgr
 .document-notice span { flex: 1; }
 .document-notice button { border: 1px solid var(--md-border); border-radius: 6px; padding: 5px 10px; background: transparent; color: inherit; cursor: pointer; }
 .document-notice button:hover { background: var(--md-hover); }
+.comparison-original #formatbar { display: none; }
+#comparison-count { align-self: center; min-width: 2ch; text-align: center; font-size: 11px; }
+.comparison-modified .comparison-line,
+.comparison-modified .md-body :is(.git-added, .git-modified) {
+  background-color: var(--vscode-diffEditor-insertedLineBackground, #42832630);
+}
+.comparison-original .comparison-line,
+.comparison-original .md-body :is(.git-added, .git-modified) {
+  background-color: var(--vscode-diffEditor-removedLineBackground, #b6383830);
+}
+.comparison-modified .comparison-inline { background: var(--vscode-diffEditor-insertedTextBackground, #42832665); }
+.comparison-original .comparison-inline { background: var(--vscode-diffEditor-removedTextBackground, #b6383865); }
+.comparison-original .md-body :is(.git-added, .git-modified)::before,
+.comparison-original .git-gutter-mark:is(.git-added, .git-modified) {
+  background: var(--vscode-editorGutter-deletedBackground, #f14c4c);
+}

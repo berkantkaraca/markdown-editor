@@ -34,6 +34,14 @@ for modified content and red for deletions. Unsaved edits are included. Source
 mode shows line markers; formatted modes show markers beside paragraphs and sections.
 Adjacent changes form a continuous line. Working Tree comparisons scroll together.
 
+Markdown comparisons default to VS Code's Text Diff Editor on versions that
+support `workbench.diffEditorAssociations`. To see a formatted comparison, open
+the diff and choose **Reopen Editor With… → Karaca MD Editor**. Karaca compares
+the open documents, with a read-only original on the left and view and change
+navigation controls on the right. Source highlights changed lines and the
+changed text within a line. Live, Split and Reading highlight affected Markdown
+blocks. Use Text Diff Editor for the agent's native review controls.
+
 ## Language
 
 English is the default. To use Turkish, open VS Code Settings, search for
@@ -45,6 +53,25 @@ English is the default. To use Turkish, open VS Code Settings, search for
 
 Set it to `"en"` to switch back to English. Changes apply immediately.
 
+## Browser edition
+
+Run `npm install`, `npm run build:web`, then `npm run preview:web`.
+Open the printed URL for the landing page or add `/editor/` to open the editor.
+You can open a local Markdown file, edit it in any of the four modes, and download
+the result with **Download .md** or **Ctrl/Cmd+S**.
+The browser keeps one local draft per editor URL. Download a copy before clearing
+site data or switching devices. There is no account, file upload, or cloud sync.
+Images added in the browser are embedded in the Markdown. For an imported
+file with relative image paths, keep the downloaded file beside the original assets.
+Workspace and Git tools are available in the VS Code extension.
+
+For Coolify, connect this repository and choose the **Dockerfile** build pack.
+Use the repository root as the base directory, the root `Dockerfile`, and
+**Ports Exposes: 80**. The site serves the landing page at `/` and the editor at
+`/editor/`. No environment variables, volume, or database is needed.
+For another static host, copy the entire `out/web/` directory. It can also be served
+under a path such as `/karaca-md/`.
+
 ## Development
 
 ```powershell
@@ -53,4 +80,4 @@ npm run compile
 npm test
 ```
 
-Press **F5** in VS Code to try the extension. The current build is **paket-25**.
+Press **F5** in VS Code to try the extension. The current build is **paket-29**.

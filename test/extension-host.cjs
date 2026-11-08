@@ -14,6 +14,8 @@ test("VS Code Extension Host: aç, düzenle, kaydet ve yeniden aç", { timeout: 
   const git = args => execFileSync("git", args, { cwd: directory, stdio: "pipe" });
   git(["init"]); git(["-c", "user.name=Karaca Test", "-c", "user.email=test@example.invalid", "add", "roundtrip.md"]);
   git(["-c", "user.name=Karaca Test", "-c", "user.email=test@example.invalid", "commit", "-m", "Git gutter baseline"]);
+  fs.writeFileSync(file, baseline.replace("Başlangıç paragrafı.", "HEAD paragrafı."));
+  git(["-c", "user.name=Karaca Test", "-c", "user.email=test@example.invalid", "commit", "-am", "Different HEAD baseline"]);
   fs.writeFileSync(file, baseline.replace("Başlangıç paragrafı.", "Değişen paragraf.").replace("Silinecek.\n\n", "") + "\nYeni paragraf.\n");
   const candidates = [process.env.VSCODE_EXECUTABLE,
     path.join(process.env.LOCALAPPDATA || "", "Programs/Microsoft VS Code/Code.exe"),
@@ -40,7 +42,7 @@ test("VS Code Extension Host: aç, düzenle, kaydet ve yeniden aç", { timeout: 
     assert.ok(fs.existsSync(path.join(channel, "ready")), "Extension Host test runner başlatılmalı");
     let frame = await editorFrame();
     await frame.locator("#live-root h1").waitFor();
-    assert.equal(await frame.locator("#pkgmark").innerText(), "paket-25");
+    assert.equal(await frame.locator("#pkgmark").innerText(), "paket-29");
     await frame.getByRole("button", { name: "Table", exact: true }).waitFor();
     await frame.locator("#live-root .git-modified").first().waitFor();
     await frame.locator("#live-root .git-added").first().waitFor();
@@ -68,6 +70,16 @@ test("VS Code Extension Host: aç, düzenle, kaydet ve yeniden aç", { timeout: 
     assert.equal(diffFrames.length,2,"Working Tree iki özel editör açmalı");
     const modified = (await diffFrames[0].locator("#live-root").innerText()).includes("Değişen paragraf") ? diffFrames[0] : diffFrames[1];
     const originalFrame = diffFrames.find(f=>f!==modified);
+    await originalFrame.locator("body.comparison-original").waitFor();
+    await modified.locator("#comparison-nav").waitFor();
+    assert.equal(await originalFrame.locator("#formatbar").isVisible(), false);
+    assert.equal(await originalFrame.locator("#live-root .tiptap").getAttribute("contenteditable"), "false");
+    await modified.getByRole("tab", { name: "Source", exact: true }).click();
+    await originalFrame.locator("#source-wrap").waitFor();
+    await originalFrame.locator(".comparison-inline").filter({ hasText: "Başlangıç" }).first().waitFor();
+    await modified.locator(".comparison-inline").filter({ hasText: "Değişen" }).first().waitFor();
+    await modified.getByRole("tab", { name: "Live", exact: true }).click();
+    await originalFrame.locator("#live-wrap").waitFor();
     await modified.locator("#live-root h2").first().waitFor();
     await modified.evaluate(()=>{ const wrap=document.querySelector("#live-wrap"), heading=document.querySelector("#live-root h2"); wrap.scrollTop+=heading.getBoundingClientRect().top-wrap.getBoundingClientRect().top-25; });
     await originalFrame.waitForFunction(()=>document.querySelector("#live-wrap").scrollTop>300);
@@ -121,7 +133,7 @@ test("VS Code Extension Host: aç, düzenle, kaydet ve yeniden aç", { timeout: 
     assert.match(fs.readFileSync(file,"utf8"),/## Pano başlığı/);
     assert.match(fs.readFileSync(file,"utf8"),/\*\*kalın\*\*/);
     assert.equal(await frame.locator("#live-root td").filter({hasText:"Pano hücresi"}).count(),1);
-    await window.screenshot({ path: path.join(directory, "roundtrip-paket-25.png") });
+    await window.screenshot({ path: path.join(directory, "roundtrip-paket-29.png") });
     const original = path.join(directory, "selected-original.png");
     fs.writeFileSync(original, Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j/gAAAABJRU5ErkJggg==", "base64"));
     // Stub only the OS chooser in this isolated Electron process, exercising the
@@ -159,9 +171,8 @@ test("VS Code Extension Host: aç, düzenle, kaydet ve yeniden aç", { timeout: 
     assert.equal(await frame.locator("#live-root .git-modified").count(), 0);
 
   } catch (error) {
-    const window = await app.firstWindow();
-    await window.screenshot({ path: path.join(directory, "failure.png") });
-    console.log("frames", window.frames().map((frame) => frame.url()));
+    const window = app.windows()[0];
+    await window?.screenshot({ path: path.join(directory, "failure.png"), timeout: 2000 }).catch(() => {});
     throw error;
   } finally {
     fs.writeFileSync(path.join(channel, "command.json"), JSON.stringify({ type: "stop" }));

@@ -15,13 +15,15 @@ export class SourceEditor {
   private numbers = new Compartment();
   private theme = new Compartment();
   private locale = new Compartment();
+  private readOnly = new Compartment();
   private git = new Compartment();
+  private history = new Compartment();
   private bookmarks = new Map<string, number>();
 
   constructor(element: HTMLElement, changed: (text: string) => void, pasteImage: (file: File) => void) {
     this.view = new EditorView({ parent: element, state: EditorState.create({
       extensions: [
-        history(), markdown(), highlightActiveLine(), search({ top: true }), highlightSelectionMatches(), this.git.of([]),
+        this.history.of(history()), markdown(), highlightActiveLine(), search({ top: true }), highlightSelectionMatches(), this.git.of([]), this.readOnly.of([]),
         this.wrapping.of(EditorView.lineWrapping), this.numbers.of(lineNumbers()), this.theme.of([]), this.locale.of([]),
         keymap.of([{ key: "Enter", run: (view) => {
           const selection = view.state.selection.main;
@@ -68,6 +70,13 @@ export class SourceEditor {
     } finally { this.applying = false; }
   }
 
+  reset(text: string): void {
+    this.bookmarks.clear();
+    this.view.dispatch({ effects: this.history.reconfigure([]) });
+    this.load(text);
+    this.view.dispatch({ selection: { anchor: 0 }, effects: this.history.reconfigure(history()) });
+  }
+
   configure(wrap: boolean, numbers: boolean, dark: boolean): void {
     this.view.dispatch({ effects: [this.wrapping.reconfigure(wrap ? EditorView.lineWrapping : []),
       this.numbers.reconfigure(numbers ? lineNumbers() : []), this.theme.reconfigure(dark ? oneDark : []),
@@ -79,8 +88,13 @@ export class SourceEditor {
       } : {}))] });
   }
   undo(): void { undo(this.view); }
-  setGitBaseline(base: string | null): void {
-    this.view.dispatch({ effects: base === null ? [this.git.reconfigure([])] : [this.git.reconfigure(sourceGitExtensions), gitBaseEffect.of(base)] });
+  setReadOnly(readOnly: boolean): void {
+    this.view.dispatch({ effects: this.readOnly.reconfigure([
+      EditorState.readOnly.of(readOnly), EditorView.editable.of(!readOnly),
+    ]) });
+  }
+  setGitBaseline(base: string | null, comparison = false, originalSide = false): void {
+    this.view.dispatch({ effects: base === null ? [this.git.reconfigure([])] : [this.git.reconfigure(sourceGitExtensions), gitBaseEffect.of({ text: base, comparison, originalSide })] });
   }
   redo(): void { redo(this.view); }
   get canUndo(): boolean { return undoDepth(this.view.state) > 0; }
