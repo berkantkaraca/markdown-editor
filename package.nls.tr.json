@@ -1,4 +1,5 @@
 {
+  "config.showGitIndicators": "Markdown editöründe Git değişiklik göstergelerini göster.",
   "description": "berkantkaraca tarafından geliştirilen tek yüzeyli WYSIWYG Markdown editörü. Canlı, Kaynak, Split ve Okuma modları.",
   "view.karacaOutline": "Karaca İçindekiler",
   "view.karacaBacklinks": "Karaca Geri Bağlantılar",

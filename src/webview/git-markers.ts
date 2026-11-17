@@ -73,19 +73,45 @@ export const sourceGitExtensions = [
     initialSpacer: () => new GitSpacer() }),
 ];
 
+// List items keep their own change kind. Their bars share the document gutter,
+// and a parent bar stops before its nested list so it cannot cover child bars.
+export function gitListMarkerStyles(root: HTMLElement, kinds: ReadonlyMap<HTMLElement, GitChangeKind>): Map<HTMLElement, string> {
+  const styles = new Map<HTMLElement, string>();
+  if (!kinds.size) return styles;
+  const items = Array.from(root.querySelectorAll<HTMLElement>("li"));
+  const gutter = root.getBoundingClientRect().left + parseFloat(getComputedStyle(root).paddingLeft) - 13;
+  items.forEach((item, index) => {
+    const kind = kinds.get(item);
+    if (!kind) return;
+    const rect = item.getBoundingClientRect();
+    const nested = item.querySelector("ul,ol");
+    const next = items[index + 1];
+    const end = nested?.getBoundingClientRect().top ?? rect.bottom;
+    const adjacent = next?.parentElement === nested || next?.parentElement?.contains(item);
+    const nextTop = next && adjacent && kinds.get(next) === kind ? next.getBoundingClientRect().top : end;
+    const bottom = Math.max(end, nextTop);
+    styles.set(item, `--git-list-left:${gutter - rect.left}px;--git-list-bottom:${rect.bottom - bottom}px`);
+  });
+  return styles;
+}
+
 export function decorateGitPreview(root: HTMLElement, base: string | null, text: string, originalSide = false): void {
-  root.querySelectorAll<HTMLElement>(".git-added,.git-modified,.git-deleted").forEach(element => {element.classList.remove("git-added", "git-modified", "git-deleted", "git-joined");element.style.removeProperty("--git-gap");});
+  root.querySelectorAll<HTMLElement>(".git-added,.git-modified,.git-deleted").forEach(element => {
+    element.classList.remove("git-added", "git-modified", "git-deleted", "git-joined");
+    for (const property of ["--git-gap", "--git-list-left", "--git-list-bottom"]) element.style.removeProperty(property);
+  });
   root.querySelectorAll(".git-deleted-point").forEach(element => element.remove());
   if (base === null) return;
   const changes=characterChanges(base,text,originalSide);
   const blocks = Array.from(root.children).filter(element => element.hasAttribute("data-md-range"));
   for(const block of blocks){if(block.matches("ul,ol"))continue;const [from,to]=block.getAttribute("data-md-range")!.split(":").map(Number);const kind=changeForRange(changes,from,to);if(kind)block.classList.add(`git-${kind}`);}
   const items = listSource(text).items;
-  root.querySelectorAll("li").forEach((item,index) => {
+  const listKinds = new Map<HTMLElement, GitChangeKind>();
+  root.querySelectorAll<HTMLElement>("li").forEach((item,index) => {
     const source = items[index]; if (!source) return;
     const kinds = source.own.map(range => changeForRange(changes,range.from,range.to));
     const kind = kinds.includes("modified") ? "modified" : kinds.includes("added") ? "added" : null;
-    if (kind) item.classList.add(`git-${kind}`);
+    if (kind) { item.classList.add(`git-${kind}`); listKinds.set(item, kind); }
   });
   for (const hunk of changes) {
     const from = hunk.from;
@@ -95,6 +121,7 @@ export function decorateGitPreview(root: HTMLElement, base: string | null, text:
       if (target) root.insertBefore(point, target); else root.appendChild(point);
     }
   }
-  for(const block of root.querySelectorAll(".git-added,.git-modified")){const next=block.nextElementSibling; if(!(block instanceof HTMLElement)||!(next instanceof HTMLElement))continue;
+  for(const block of root.querySelectorAll(".git-added,.git-modified")){const next=block.nextElementSibling; if(!(block instanceof HTMLElement)||!(next instanceof HTMLElement)||block.matches("li"))continue;
     if(["git-added","git-modified"].some(kind=>block.classList.contains(kind)&&next.classList.contains(kind))){block.classList.add("git-joined");block.style.setProperty("--git-gap",`${Math.max(0,next.getBoundingClientRect().top-block.getBoundingClientRect().bottom)}px`);}}
+  for (const [item, style] of gitListMarkerStyles(root, listKinds)) item.style.cssText += ";" + style;
 }

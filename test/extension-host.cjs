@@ -42,7 +42,7 @@ test("VS Code Extension Host: aç, düzenle, kaydet ve yeniden aç", { timeout: 
     assert.ok(fs.existsSync(path.join(channel, "ready")), "Extension Host test runner başlatılmalı");
     let frame = await editorFrame();
     await frame.locator("#live-root h1").waitFor();
-    assert.equal(await frame.locator("#pkgmark").innerText(), "paket-29");
+    assert.equal(await frame.locator("#pkgmark").innerText(), "33");
     await frame.getByRole("button", { name: "Table", exact: true }).waitFor();
     await frame.locator("#live-root .git-modified").first().waitFor();
     await frame.locator("#live-root .git-added").first().waitFor();
@@ -95,8 +95,16 @@ test("VS Code Extension Host: aç, düzenle, kaydet ve yeniden aç", { timeout: 
     await frame.getByRole("link", { name: "Hedefe git", exact: true }).click();
     await frame.waitForFunction(() => document.querySelector("#live-wrap").scrollTop > 500);
     assert.equal(await frame.locator("#ui-language").count(), 0);
-    fs.writeFileSync(path.join(channel, "command.json"), JSON.stringify({ type: "language", language: "tr" }));
+    await frame.locator("#editor-settings summary").click();
+    await frame.locator('[data-editor-preference="language"]').selectOption("tr");
     await frame.getByRole("button", { name: "Tablo", exact: true }).waitFor();
+    const settingsPath = path.join(profile, "User", "settings.json");
+    for (let attempt = 0; attempt < 100; attempt++) {
+      if (fs.existsSync(settingsPath) && /"karacaMd.language"\s*:\s*"tr"/.test(fs.readFileSync(settingsPath, "utf8"))) break;
+      await window.waitForTimeout(50);
+    }
+    assert.match(fs.readFileSync(settingsPath, "utf8"), /"karacaMd.language"\s*:\s*"tr"/);
+    await frame.locator("#editor-settings summary").click();
     await app.evaluate(({clipboard})=>{
       globalThis.karacaSavedClipboard={text:clipboard.readText(),html:clipboard.readHTML(),rtf:clipboard.readRTF(),image:clipboard.readImage()};
       clipboard.writeText("Düz pano denemesi");
@@ -133,9 +141,18 @@ test("VS Code Extension Host: aç, düzenle, kaydet ve yeniden aç", { timeout: 
     assert.match(fs.readFileSync(file,"utf8"),/## Pano başlığı/);
     assert.match(fs.readFileSync(file,"utf8"),/\*\*kalın\*\*/);
     assert.equal(await frame.locator("#live-root td").filter({hasText:"Pano hücresi"}).count(),1);
-    await window.screenshot({ path: path.join(directory, "roundtrip-paket-29.png") });
+    await window.screenshot({ path: path.join(directory, "roundtrip-paket-33.png") });
     const original = path.join(directory, "selected-original.png");
-    fs.writeFileSync(original, Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j/gAAAABJRU5ErkJggg==", "base64"));
+    const png = await frame.evaluate(() => {
+      const canvas = document.createElement("canvas");
+      canvas.width = 64;
+      canvas.height = 48;
+      const ctx = canvas.getContext("2d");
+      ctx.fillStyle = "#4da3ff";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      return canvas.toDataURL().split(",")[1];
+    });
+    fs.writeFileSync(original, Buffer.from(png, "base64"));
     // Stub only the OS chooser in this isolated Electron process, exercising the
     // real extension's file reading, copying, insertion, save cleanup and undo.
     await app.evaluate(({ dialog }, selected) => { dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [selected] }); }, original);
@@ -151,7 +168,14 @@ test("VS Code Extension Host: aç, düzenle, kaydet ve yeniden aç", { timeout: 
     await window.keyboard.press("Control+s");
     for (let attempt = 0; attempt < 100 && !fs.readFileSync(file, "utf8").includes(relative); attempt++) await window.waitForTimeout(100);
     assert.ok(fs.readFileSync(file, "utf8").includes(relative));
-    await frame.locator("#live-root img").click(); await window.keyboard.press("Delete");
+    await frame.locator("#live-root img").click();
+    const preview = frame.getByRole("dialog", { name: "Görsel önizleme", exact: true });
+    await preview.waitFor();
+    await preview.getByRole("button", { name: "Yakınlaştır", exact: true }).click();
+    await preview.getByRole("button", { name: /Görseli ekrana sığdır.*125%/ }).waitFor();
+    await window.keyboard.press("Escape");
+    await preview.waitFor({ state: "hidden" });
+    await window.keyboard.press("Delete");
     await window.keyboard.press("Control+s");
     for (let attempt = 0; attempt < 100 && fs.existsSync(copied); attempt++) await window.waitForTimeout(100);
     assert.equal(fs.existsSync(copied), false); assert.ok(fs.existsSync(original));

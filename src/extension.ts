@@ -1,4 +1,5 @@
 import { translate, type Language } from "./shared/i18n";
+import { parseEditorPreference } from "./shared/editor-preferences";
 import { ImageAssets, generatedImages } from "./host/image-assets";
 import { watchGitBaseline } from "./host/git-baseline";
 import { RequestQueue } from "./host/request-queue";
@@ -483,6 +484,7 @@ class KaracaMarkdownProvider implements vscode.CustomTextEditorProvider {
         defaultMode: cfg().get<string>("defaultMode", "live"),
         wordWrap: cfg().get<boolean>("wordWrap", true),
         lineNumbers: cfg().get<boolean>("lineNumbers", true),
+        showGitIndicators: cfg().get<boolean>("showGitIndicators", true),
       });
     };
 
@@ -532,6 +534,16 @@ class KaracaMarkdownProvider implements vscode.CustomTextEditorProvider {
         return; // bilinmeyen protokol sürümü
       }
       switch (msg?.type) {
+        case "set-editor-preference": {
+          if (!parseEditorPreference(msg.key, msg.value)) break;
+          try {
+            await cfg().update(msg.key, msg.value, vscode.ConfigurationTarget.Global);
+          } catch {
+            void vscode.window.showWarningMessage(t("Editör ayarı kaydedilemedi."));
+          }
+          postConfig();
+          break;
+        }
         case "read-clipboard-text": {
           if (typeof msg.nonce !== "string" || msg.nonce.length > 100) break;
           try {

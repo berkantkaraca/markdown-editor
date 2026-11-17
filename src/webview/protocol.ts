@@ -11,16 +11,23 @@ export interface EditorHost<State> {
 }
 
 export interface BrowserEditorHost extends EditorHost<{ mode?: string }> {
+  allowLocalImages?: boolean;
   connect(actions: {
     receive(message: OutMsg): void;
-    prepare(): string | undefined;
+    prepare(normalize?: boolean): string | undefined;
     replace(text: string, version: number): void;
     reveal(line: number): void;
   }): void;
 }
 
 declare global {
-  interface Window { __karacaBrowserHost?: BrowserEditorHost }
+  interface Window {
+    __karacaBrowserHost?: BrowserEditorHost;
+    karacaMdFormEditor?: {
+      loadMarkdown(text: string): void;
+      getMarkdown(): string | undefined;
+    };
+  }
 }
 
 export function createPoster(postMessage: (msg: unknown) => void): (msg: OutMsg) => void {

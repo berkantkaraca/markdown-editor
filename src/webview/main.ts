@@ -13,22 +13,22 @@ import { createPoster, PROTO, type EditorHost } from "./protocol";
 import { createMarkdown } from "../shared/md-pipeline";
 import { parseFrontmatter, parseHeadings } from "../shared/md-utils";
 import { decorateGitPreview } from "./git-markers";
+import { editorDefaults, editorModes, isEditorMode as validMode, parseEditorPreference, type EditorMode as Mode, type EditorPreferences } from "../shared/editor-preferences";
+import { attachImagePreview } from "./image-preview";
 import { scrollKey, captureScroll, applyScroll, cancelScroll, type ScrollSurface, type ScrollPosition } from "./comparison-scroll";
 
-type Mode = "live" | "source" | "split" | "reading";
 type ViewState = { mode?: string; recoveryDraft?: string; draft?: LocalDraft; scrollOffsets?: Record<string, number> };
 declare function acquireVsCodeApi(): EditorHost<ViewState>;
 const browserHost = window.__karacaBrowserHost;
 const vscode: EditorHost<ViewState> = browserHost ?? acquireVsCodeApi();
 const post = createPoster((message) => vscode.postMessage(message));
 const $ = (id: string) => document.getElementById(id)!;
-const validMode = (value: unknown): value is Mode => ["live", "source", "split", "reading"].includes(String(value));
 const storedMode = vscode.getState()?.mode;
 let mode: Mode = validMode(storedMode) ? storedMode : "live";
 let configured = false;
 let saveAfterComposition = false;
 const compositionMessages: any[] = [];
-let wrap = true, numbers = true;
+const preferences = { ...editorDefaults };
 
 let previewTimer: ReturnType<typeof setTimeout>;
 let imageSequence = 0;
@@ -39,10 +39,12 @@ const pendingPlainPastes = new Set<string>();
 let plainPasteSequence = 0;
 const imagePickers = new Map<string, (file: string) => void>();
 const liveRoot = $("live-root"), readingRoot = $("reading-root"), splitRoot = $("split-root");
+const imagePreview = attachImagePreview([liveRoot, readingRoot, splitRoot]);
 function updateLanguage(language: unknown): void {
   setLanguage(language);
   document.documentElement.lang = language === "tr" ? "tr" : "en";
   for (const id of ["formatbar", "findbar", "back-to-live", "sync-retry"]) localizeChrome($(id));
+  imagePreview.localize();
   for (const node of liveRoot.querySelectorAll<HTMLElement>(".preserved-content")) node.title = t("Düzenlemek için çift tıklayın");
   $("sync-message").textContent = syncState === "blocked" ? t("Kayıt tamamlanamadı. Taslağınız korundu.") : t("Kaydı yeniden deniyoruz…");
 }
@@ -51,6 +53,9 @@ let toolbar: ReturnType<typeof attachFormatbar> | undefined;
 let tableHover: ReturnType<typeof attachTableHover> | undefined;
 let find: ReturnType<typeof attachFindbar> | undefined;
 let gitBase: string | null = null;
+const editorSettings = $("editor-settings") as HTMLDetailsElement;
+const preferenceControls = editorSettings.querySelectorAll<HTMLInputElement | HTMLSelectElement>("[data-editor-preference]");
+const visibleGitBase = () => preferences.showGitIndicators ? gitBase : null;
 let comparisonSide: "original" | "modified" | null = null;
 let pairedComparison = false;
 let changeIndex = -1;
@@ -69,8 +74,8 @@ let gitTimer: ReturnType<typeof setTimeout>;
 function refreshGit(): void {
   updateComparisonNavigation();
   if (mode === "live") rich.refreshGit();
-  if (mode === "reading") decorateGitPreview(readingRoot, gitBase, sync.text, comparisonSide === "original");
-  if (mode === "split") decorateGitPreview(splitRoot, gitBase, sync.text, comparisonSide === "original");
+  if (mode === "reading") decorateGitPreview(readingRoot, visibleGitBase(), sync.text, comparisonSide === "original");
+  if (mode === "split") decorateGitPreview(splitRoot, visibleGitBase(), sync.text, comparisonSide === "original");
 }
 
 const sync = new DocumentSync({
@@ -100,6 +105,28 @@ const sync = new DocumentSync({
     post({ type: "error", message: t("Dış değişiklikle çakışan yerel taslak korundu. Üstteki Taslağı geri yükle düğmesiyle açabilirsiniz.") });
   },
 });
+function applyGitVisibility(): void {
+  source.setGitBaseline(visibleGitBase(), pairedComparison, comparisonSide === "original");
+  rich.setGitBaseline(visibleGitBase(), comparisonSide === "original");
+  refreshGit();
+}
+for (const control of preferenceControls) control.addEventListener("change", () => {
+  const key = control.dataset.editorPreference;
+  const value = control instanceof HTMLInputElement ? control.checked : control.value;
+  const preference = parseEditorPreference(key, value);
+  if (!preference) return;
+  applyPreferences(preference);
+  post({ type: "set-editor-preference", key, value });
+});
+document.addEventListener("pointerdown", event => {
+  if (!editorSettings.contains(event.target as Node)) editorSettings.open = false;
+});
+editorSettings.addEventListener("keydown", event => {
+  if (event.key !== "Escape" || !editorSettings.open) return;
+  event.preventDefault();
+  editorSettings.open = false;
+  editorSettings.querySelector("summary")?.focus();
+});
 const rich = new DocumentEditor({
   element: liveRoot,
   changed: (text) => {
@@ -115,10 +142,21 @@ const rich = new DocumentEditor({
 });
 const source = new SourceEditor($("cm-host"), (text) => { sync.edit(text); toolbar?.refreshBar(); },
   (file) => saveImage(file, "source"));
+if (typeof ResizeObserver !== "undefined") {
+  const listGeometry = new ResizeObserver(() => {
+    if (visibleGitBase() === null) return;
+    if (mode === "live") rich.refreshGit();
+    else if (mode === "reading" || mode === "split") {
+      decorateGitPreview(mode === "reading" ? readingRoot : splitRoot, visibleGitBase(), sync.text, comparisonSide === "original");
+    }
+  });
+  for (const root of [liveRoot, readingRoot, splitRoot]) listGeometry.observe(root);
+  window.addEventListener("pagehide", event => { if (!event.persisted) listGeometry.disconnect(); });
+}
 toolbar = attachFormatbar({
   getMode: () => mode, getEditor: () => rich.editor, getSource: () => source.view,
   insertSpecial: (kind) => rich.insertSpecial(kind),
-  pickImage: (done) => {
+  pickImage: browserHost?.allowLocalImages === false ? undefined : (done) => {
     const nonce = `pick-${Date.now()}-${++imageSequence}`;
     imagePickers.set(nonce, done); post({ type: "pick-image", nonce });
   },
@@ -151,21 +189,44 @@ codeStyle.textContent = codeTheme;
 document.head.appendChild(codeStyle);
 let previousTheme: boolean | undefined;
 function theme(): void {
-  source.configure(wrap, numbers, isDark());
+  source.configure(preferences.wordWrap, preferences.lineNumbers, isDark());
   if (previousTheme !== isDark()) {
     previousTheme = isDark();
     for (const root of [liveRoot, readingRoot, splitRoot]) refreshDiagrams(root);
   }
+}
+function applyPreferences(patch: Partial<EditorPreferences>): void {
+  const before = { ...preferences };
+  Object.assign(preferences, patch);
+  for (const control of preferenceControls) {
+    const value = preferences[control.dataset.editorPreference as keyof EditorPreferences];
+    if (control instanceof HTMLInputElement) control.checked = value === true;
+    else control.value = String(value);
+  }
+  if (before.language !== preferences.language) {
+    toolbar?.close();
+    document.querySelector<HTMLDialogElement>(".source-dialog")?.close();
+    updateLanguage(preferences.language);
+    tableHover?.refresh();
+    if (find?.isOpen()) find.refresh();
+    rich.editor.view.dom.setAttribute("aria-label", t("Belge düzenleyici"));
+    const recovery = vscode.getState()?.recoveryDraft;
+    if (recovery !== undefined) showRecovery(recovery);
+  }
+  if (before.wordWrap !== preferences.wordWrap || before.lineNumbers !== preferences.lineNumbers
+    || before.language !== preferences.language) theme();
+  if (before.showGitIndicators !== preferences.showGitIndicators || before.language !== preferences.language) applyGitVisibility();
 }
 function schedulePreview(): void {
   clearTimeout(previewTimer);
   previewTimer = setTimeout(refreshPreview, 200);
 }
 function refreshPreview(): void {
+  clearTimeout(previewTimer);
   const root = mode === "reading" ? readingRoot : mode === "split" ? splitRoot : null;
   if (!root) return;
   renderPreview(root, sync.text);
-  decorateGitPreview(root, gitBase, sync.text, comparisonSide === "original");
+  decorateGitPreview(root, visibleGitBase(), sync.text, comparisonSide === "original");
   resolveImages(root);
   if (find?.isOpen()) find.refresh();
 }
@@ -187,7 +248,7 @@ function setMode(next: Mode): void {
   mode = next;
   if (comparisonSide !== "original") post({ type: "comparison-mode", mode });
   vscode.setState({ ...vscode.getState(), mode });
-  for (const name of ["source", "live", "split", "reading"] as Mode[]) {
+  for (const name of editorModes) {
     const button = $("btn-" + name);
     button.classList.toggle("active", next === name);
     button.setAttribute("role", "tab");
@@ -205,14 +266,17 @@ function setMode(next: Mode): void {
   } else if (next === "source" || next === "split") source.load(sync.text);
   refreshPreview(); refreshGit(); toolbar?.refreshBar();
 }
-for (const name of ["source", "live", "split", "reading"] as Mode[]) {
+for (const name of editorModes) {
   $("btn-" + name).addEventListener("click", () => setMode(name));
 }
-readingRoot.addEventListener("dblclick", () => { if (comparisonSide !== "original") setMode("live"); });
+readingRoot.addEventListener("dblclick", event => {
+  if (comparisonSide !== "original" && !(event.target instanceof HTMLImageElement)) setMode("live");
+});
 
 function resolveImages(root: HTMLElement): void {
   const missing = new Set<string>();
   root.querySelectorAll<HTMLImageElement>("img").forEach((image) => {
+    imagePreview.mark(image);
     const path = image.dataset.origsrc || image.getAttribute("src") || "";
     if (!path || /^(https?:|data:|blob:|vscode-)/i.test(path) || path.startsWith("#")) return;
     image.dataset.origsrc = path;
@@ -463,9 +527,7 @@ function receiveMessage(message: any): void {
     pairedComparison = message.paired === true;
     if (side === "original" && validMode(message.mode) && mode !== message.mode) setMode(message.mode);
     gitBase = typeof message.text === "string" ? message.text : null;
-    source.setGitBaseline(gitBase, pairedComparison, side === "original");
-    rich.setGitBaseline(gitBase, side === "original");
-    refreshGit();
+    applyGitVisibility();
   } else if (message.type === "comparison-reveal" && Number.isSafeInteger(message.line) && message.line >= 0) {
     revealChange(message.line);
   } else if (message.type === "draft-state") {
@@ -473,16 +535,16 @@ function receiveMessage(message: any): void {
     const local = vscode.getState()?.draft;
     if (draft && typeof draft.text === "string" && draft.text !== sync.text && (!local || draft.updatedAt >= local.updatedAt)) showRecovery(draft.text);
   } else if (message.type === "config") {
-    toolbar?.close();
-    document.querySelector<HTMLDialogElement>(".source-dialog")?.close();
-    updateLanguage(message.language); tableHover?.refresh();
-    if (find?.isOpen()) find.refresh();
-    rich.editor.view.dom.setAttribute("aria-label", t("Belge düzenleyici"));
-    const recovery = vscode.getState()?.recoveryDraft;
-    if (recovery !== undefined) showRecovery(recovery);
-    wrap = message.wordWrap !== false; numbers = message.lineNumbers !== false; theme();
+    const { language, ...editorOptions } = editorDefaults;
+    const patch: Partial<EditorPreferences> = parseEditorPreference("language", message.language) ?? { language };
+    for (const key of Object.keys(editorOptions)) Object.assign(patch, parseEditorPreference(key, message[key]));
+    applyPreferences(patch);
     const savedMode = vscode.getState()?.mode;
-    if (!configured) { setMode(validMode(savedMode) ? savedMode : validMode(message.defaultMode) ? message.defaultMode : "live"); configured = true; }
+    if (!configured) {
+      setMode(browserHost && patch.defaultMode ? patch.defaultMode : validMode(savedMode) ? savedMode : preferences.defaultMode);
+      rich.editor.view.dom.setAttribute("aria-label", t("Belge düzenleyici"));
+      configured = true;
+    }
   } else if (message.type === "image-picked") {
     const done = imagePickers.get(message.nonce); imagePickers.delete(message.nonce);
     done?.(typeof message.path === "string" ? message.path : "");
@@ -505,7 +567,7 @@ function receiveMessage(message: any): void {
 if (!browserHost) window.addEventListener("message", (event) => receiveMessage(event.data));
 browserHost?.connect({
   receive: receiveMessage,
-  prepare: () => (mode === "live" ? rich.prepareSave() : rich.flush()) ? sync.text : undefined,
+  prepare: (normalize = true) => (normalize && mode === "live" ? rich.prepareSave() : rich.flush()) ? sync.text : undefined,
   replace: (text, version) => {
     pendingImages.clear(); imagePickers.clear(); images.clear();
     document.querySelector<HTMLDialogElement>(".source-dialog")?.close();

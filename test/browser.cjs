@@ -614,6 +614,43 @@ test("sürekli kaydırma karşı tarafa her karede iletilir ve geri besleme üre
   assert.equal(await page.evaluate(()=>window.__posted.filter(m=>m.type==="scroll-sync").length),before);
 });
 
+test("iç içe listelerde Git çizgileri aynı sütunda ve ayardan kapanabilir", async () => {
+  const base = "# Liste\n\n- Üst\n  - Çocuk\n  - Komşu\n- Sabit\n";
+  const text = "# Liste\n\n- Üst değişti\n  - Çocuk\n  - Yeni\n  - Bir tane daha\n  - Komşu\n- Sabit\n";
+  await page.evaluate(({base, text}) => {
+    window.postMessage({proto:1,type:"update",text,version:2},"*");
+    window.postMessage({proto:1,type:"git-baseline",text:base},"*");
+  }, { base, text });
+  await page.locator("#live-root li.git-added").first().waitFor();
+  for (const [mode, root] of [["live", "#live-root"], ["reading", "#reading-root"], ["split", "#split-root"]]) {
+    await page.locator("#btn-" + mode).click();
+    const markers = page.locator(root + " li:is(.git-added,.git-modified)");
+    await markers.first().waitFor();
+    const [parent, first, second] = await markers.evaluateAll(items => items.map(item => {
+      const rect = item.getBoundingClientRect();
+      const style = getComputedStyle(item, "::before");
+      return { left: rect.left + parseFloat(style.left), top: rect.top, bottom: rect.bottom - parseFloat(style.bottom), color: style.backgroundColor };
+    }));
+    assert.ok(parent && first && second);
+    assert.ok(Math.abs(parent.left - first.left) < 1 && Math.abs(first.left - second.left) < 1);
+    assert.ok(parent.bottom < first.top);
+    assert.ok(Math.abs(first.bottom - second.top) < 1);
+    assert.notEqual(parent.color, first.color);
+  }
+  await page.locator("#editor-settings summary").click();
+  const toggle = page.getByRole("checkbox", {name:"Git göstergelerini göster"});
+  await toggle.uncheck();
+  assert.equal(await page.locator("#split-root .git-added").count(), 0);
+  assert.equal(await page.locator(".git-source-gutter").count(), 0);
+  await page.locator("#btn-live").click();
+  assert.equal(await page.locator("#live-root .git-added").count(), 0);
+  await page.locator("#editor-settings summary").click();
+  await toggle.check();
+  assert.ok(await page.locator("#live-root .git-added").count());
+  assert.deepEqual(await page.evaluate(() => window.__posted
+    .filter(m => m.type === "set-editor-preference" && m.key === "showGitIndicators").map(m => m.value)), [false, true]);
+});
+
 test("yalnızca son liste maddesinin Git çizgisi mavi olur",async()=>{
   const base="- Elma\n- Armut\n  - Yeşil elma\n  - Deveci armudu\n- Muz\n";
   await page.evaluate(base=>{

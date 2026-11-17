@@ -53,7 +53,7 @@ body {
   font: .875rem var(--karaca-mono);
 }
 .web-actions { display: flex; align-items: center; gap: 8px; }
-.web-actions button, .web-actions select {
+.web-actions button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -92,7 +92,6 @@ body {
 #formatbar .seg { border-radius: var(--karaca-radius); background: var(--karaca-bg); }
 #formatbar .seg button { min-height: 32px; }
 #formatbar .seg button:not(.active):hover { background: var(--karaca-raised); }
-#pkgmark { color: var(--karaca-muted); opacity: 1; font-size: 11px; }
 #live-wrap, #reading-wrap, #split-preview { background: var(--karaca-bg); }
 .md-body { font-size: 1rem; }
 #live-wrap .md-body, #reading-wrap .md-body { padding-top: clamp(1rem, 4vw, 3rem); }
@@ -110,32 +109,26 @@ body {
   background: var(--karaca-panel);
   font-size: .75rem;
 }
-.web-sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  clip-path: inset(50%);
-  overflow: hidden;
-  white-space: nowrap;
-}
+.form-editor .web-top, .form-editor .web-notice > :last-child { display: none; }
+.form-editor .web-notice { min-height: 0; padding-block: 0; border: 0; }
+.form-editor #web-status:not(:empty) { padding-block: 6px; }
 @media (max-width: 640px) {
   .web-top { grid-template-columns: auto minmax(0, 1fr); gap: 4px 12px; padding: 6px 10px; }
   .web-document { padding-left: 12px; }
   .web-actions { grid-column: 1 / -1; flex-wrap: wrap; gap: 6px; }
-  .web-actions label { margin-left: auto; }
-  .web-actions button, .web-actions select { padding-inline: 8px; }
+  .web-actions button { padding-inline: 8px; }
   #formatbar { flex-wrap: wrap; gap: 4px 8px; padding: 4px 10px; }
   #formatbar .toolbar-actions { flex-basis: 100%; }
   #formatbar button[data-cmd] { min-height: 40px; min-width: 38px; }
   #formatbar .seg { margin-left: 0; }
   #formatbar .seg button { min-height: 40px; }
-  #pkgmark { margin-left: auto; }
+  #editor-settings { margin-left: auto; }
   .web-notice { padding-inline: 10px; }
   .md-body { padding-inline: 16px; }
   #findbar input { min-width: 0; }
 }
 @media (max-width: 360px) {
-  .web-actions button, .web-actions select { padding-inline: 7px; }
+  .web-actions button { padding-inline: 7px; }
   .web-actions button svg { display: none; }
   #formatbar .seg button { padding-inline: 8px; }
 }

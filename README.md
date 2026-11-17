@@ -28,6 +28,7 @@ Use **Image → Choose file…** to select a local image. Images are copied to t
 visible `assets/` folder as `img-<timestamp>`. On save, unused generated images
 are removed after checking other Markdown files in the workspace (or document folder).
 Undo restores removed images from a local recovery copy outside the project.
+Click an image in Live, Reading or the Split preview to enlarge it. Use the mouse wheel or **+ / −** to zoom, drag to pan, and click the percentage to fit the image again. Press **Esc** to close the preview.
 
 Git changes are marked against the last commit: green for added content, blue
 for modified content and red for deletions. Unsaved edits are included. Source
@@ -42,16 +43,11 @@ navigation controls on the right. Source highlights changed lines and the
 changed text within a line. Live, Split and Reading highlight affected Markdown
 blocks. Use Text Diff Editor for the agent's native review controls.
 
-## Language
+## Settings
 
-English is the default. To use Turkish, open VS Code Settings, search for
-**Karaca Md: Language**, and select **tr**. You can also add this to `settings.json`:
-
-```json
-"karacaMd.language": "tr"
-```
-
-Set it to `"en"` to switch back to English. Changes apply immediately.
+Open the gear with the build number to set the language, startup view, Source
+line wrapping and line numbers, or Git indicators. English is the default.
+VS Code also exposes these preferences under **Karaca Md** in Settings.
 
 ## Browser edition
 
@@ -80,4 +76,4 @@ npm run compile
 npm test
 ```
 
-Press **F5** in VS Code to try the extension. The current build is **paket-29**.
+Press **F5** in VS Code to try the extension. The current build is **paket-33**.

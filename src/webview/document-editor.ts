@@ -1,5 +1,5 @@
 import { t } from "./i18n";
-import { richGitPlugin, richGitKey, gitTitle } from "./git-markers";
+import { richGitPlugin, richGitKey, gitTitle, gitListMarkerStyles } from "./git-markers";
 import { characterChanges, changeForRange } from "../shared/git-diff";
 import { listSource } from "../shared/list-source";
 import { normalizeClipboardHTML, clipboardHasText } from "./clipboard-html";
@@ -295,22 +295,19 @@ export class DocumentEditor {
       }
       const items = listSource(this.markdown).items;
       let index = 0;
-      const listMarks: {node: DocumentNode; position: number; kind: "added" | "modified"}[] = [];
+      const listMarks: { node: DocumentNode; position: number; kind: "added" | "modified"; dom: HTMLElement }[] = [];
       doc.descendants((node, position) => {
         if (node.type.name !== "listItem" && node.type.name !== "taskItem") return;
         const source = items[index++]; if (!source) return;
         const kinds = source.own.map(range => changeForRange(changes,range.from,range.to));
         const kind = kinds.includes("modified") ? "modified" : kinds.includes("added") ? "added" : null;
-        if (kind) listMarks.push({node,position,kind});
+        const dom = kind ? this.editor.view.nodeDOM(position) : null;
+        if (kind && dom instanceof HTMLElement) listMarks.push({node, position, kind, dom});
       });
-      for (const item of listMarks) {
-        const dom = this.editor.view.nodeDOM(item.position);
-        const next = listMarks.find(other => other.position === item.position+item.node.nodeSize && other.kind === item.kind);
-        const nextDom = next ? this.editor.view.nodeDOM(next.position) : null;
-        const joined = dom instanceof HTMLElement && nextDom instanceof HTMLElement && dom.nextElementSibling === nextDom;
-        const gap = joined ? Math.max(0,nextDom.getBoundingClientRect().top-dom.getBoundingClientRect().bottom) : 0;
-        marks.push(Decoration.node(item.position,item.position+item.node.nodeSize,{class:`git-${item.kind}${joined ? " git-joined" : ""}`,"data-git-change":item.kind,style:joined?`--git-gap:${gap}px`:""}));
-      }
+      const styles = gitListMarkerStyles(this.editor.view.dom, new Map(listMarks.map(item => [item.dom, item.kind])));
+      for (const {node, position, kind, dom} of listMarks) marks.push(Decoration.node(position, position + node.nodeSize, {
+        class: `git-${kind}`, "data-git-change": kind, style: styles.get(dom) ?? "",
+      }));
     }
     this.editor.view.dispatch(this.editor.state.tr.setMeta(richGitKey, DecorationSet.create(doc, marks)));
   }

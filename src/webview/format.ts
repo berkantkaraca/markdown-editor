@@ -13,7 +13,7 @@ interface FormatDeps {
   getEditor(): Editor;
   getSource(): EditorView;
   insertSpecial(kind: "math" | "mermaid"): void;
-  pickImage(done: (file: string) => void): void;
+  pickImage?(done: (file: string) => void): void;
   undo(): void;
   redo(): void;
   history(): { undo: boolean; redo: boolean };
@@ -112,13 +112,14 @@ export function attachFormatbar(deps: FormatDeps) {
     });
     const row = document.createElement("div"); row.className = "kdialog-row";
     const ok = document.createElement("button"); ok.type = "submit"; ok.textContent = t("Ekle"); ok.className = "primary";
-    if (kind === "image") {
+    const pickImage = deps.pickImage;
+    if (kind === "image" && pickImage) {
       const form = popup;
       const browse = document.createElement("button"); browse.type = "button"; browse.className = "image-browse";
       browse.textContent = t("Dosyadan seç…");
       browse.onclick = () => {
         browse.disabled = ok.disabled = true;
-        deps.pickImage(file => { browse.disabled = ok.disabled = false; if (popup === form && file) { fields[1].value = file; fields[0].focus(); } });
+        pickImage(file => { browse.disabled = ok.disabled = false; if (popup === form && file) { fields[1].value = file; fields[0].focus(); } });
       };
       row.appendChild(browse);
     }

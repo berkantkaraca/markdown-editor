@@ -36,6 +36,7 @@ async function build() {
   fs.copyFileSync(path.join(__dirname, "brand.css"), path.join(assets, "brand.css"));
   fs.copyFileSync(path.join(__dirname, "landing.css"), path.join(assets, "landing.css"));
   fs.copyFileSync(path.join(__dirname, "web.css"), path.join(assets, "web.css"));
+  fs.copyFileSync(path.join(__dirname, "form-editor.js"), path.join(assets, "form-editor.js"));
   fs.copyFileSync(path.join(root, "media/style.css"), path.join(assets, "editor.css"));
   fs.copyFileSync(path.join(root, "media/icon.png"), path.join(assets, "icon.png"));
   fs.copyFileSync(path.join(root, "node_modules/katex/dist/katex.min.css"), path.join(assets, "katex.css"));
