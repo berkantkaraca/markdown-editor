@@ -43,7 +43,8 @@ export function runTableAction(editor:Editor,action:TableAction):boolean {
     const selection=CellSelection.create(editor.state.doc,from,to);
     editor.view.dispatch(editor.state.tr.setSelection(selection));editor.view.focus();return true;
   }
-  const chain=editor.chain().focus();
+  editor.view.focus();
+  const chain=editor.chain().scrollIntoView();
   if (action === "delete-row") {
     return chain.deleteRow().command(({ state, tr }) => {
       if (!isInTable(state)) return true;

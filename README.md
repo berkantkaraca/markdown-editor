@@ -77,4 +77,4 @@ npm run compile
 npm test
 ```
 
-Press **F5** in VS Code to try the extension. The current build is **paket-35**.
+Press **F5** in VS Code to try the extension. The current build is **paket-36**.

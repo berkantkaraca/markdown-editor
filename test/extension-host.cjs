@@ -48,7 +48,7 @@ test("VS Code Extension Host: aç, düzenle, kaydet ve yeniden aç", { timeout: 
     assert.ok(fs.existsSync(path.join(channel, "ready")), "Extension Host test runner başlatılmalı");
     let frame = await editorFrame();
     await frame.locator("#live-root h1").waitFor();
-    assert.equal(await frame.locator("#pkgmark").innerText(), "35");
+    assert.equal(await frame.locator("#pkgmark").innerText(), "36");
     await frame.getByRole("button", { name: "Table", exact: true }).waitFor();
     await frame.getByRole("link", { name: "ProductController", exact: true }).click();
     await window.waitForFunction(() => Array.from(document.querySelectorAll(".tab.active")).some(tab => tab.textContent.includes("ProductController.java")));
@@ -182,7 +182,7 @@ test("VS Code Extension Host: aç, düzenle, kaydet ve yeniden aç", { timeout: 
     assert.match(fs.readFileSync(file,"utf8"),/## Pano başlığı/);
     assert.match(fs.readFileSync(file,"utf8"),/\*\*kalın\*\*/);
     assert.equal(await frame.locator("#live-root td").filter({hasText:"Pano hücresi"}).count(),1);
-    await window.screenshot({ path: path.join(directory, "roundtrip-paket-35.png") });
+    await window.screenshot({ path: path.join(directory, "roundtrip-paket-36.png") });
     const original = path.join(directory, "selected-original.png");
     const png = await frame.evaluate(() => {
       const canvas = document.createElement("canvas");

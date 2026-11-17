@@ -9,6 +9,18 @@ const http = require("node:http");
 let browser, server, page, address;
 const errors = [];
 const initial = "# Deneme\n\nBirinci paragraf.\n\nİkinci paragraf.\n\n- Bir madde\n\n- [ ] Görev\n";
+async function pasteClipboard({ text = "", html = "", image = false }) {
+  await page.evaluate(({ text, html, image }) => {
+    const data = new DataTransfer();
+    if (text) data.setData("text/plain", text);
+    if (html) data.setData("text/html", html);
+    if (image) data.items.add(new File([new Uint8Array([0])], "selection.png", { type: "image/png" }));
+    // Firefox ignores clipboardData in the synthetic ClipboardEvent constructor.
+    const event = new Event("paste", { bubbles: true, cancelable: true });
+    Object.defineProperty(event, "clipboardData", { value: data });
+    document.querySelector("#live-root .tiptap").dispatchEvent(event);
+  }, { text, html, image });
+}
 before(async () => {
   const root = path.resolve(__dirname, "..");
   server = http.createServer((request, response) => {
@@ -141,11 +153,15 @@ test("pano HTML yapıştırma model üzerinden biçimli kaydedilir", async () =>
 
 test("Confluence benzeri HTML başlık, liste, tablo ve kod olarak yapışır",async()=>{
   await page.locator("#live-root .tiptap").click();
-  await page.keyboard.press(`${modifier}+End`); await page.keyboard.press("Enter");
-  await page.evaluate(()=>{
-    const data=new DataTransfer();
-    data.setData("text/plain","Confluence pano metni");
-    data.setData("text/html",`<html><body><!--StartFragment--><div class="ak-renderer-document" contenteditable="false" data-md-range="0:8">
+  await page.keyboard.press(`${modifier}+End`);
+  await page.waitForFunction(() => {
+    const { selection, doc } = window.__karacaTest.rich.editor.state;
+    return selection.from >= doc.content.size - 4 && selection.$from.parentOffset === selection.$from.parent.content.size;
+  });
+  await page.keyboard.press("Enter");
+  await page.waitForFunction(() => window.__karacaTest.rich.editor.state.selection.$from.parent.type.name === "paragraph");
+  await pasteClipboard({ text: "Confluence pano metni", image: true,
+    html: `<html><body><!--StartFragment--><div class="ak-renderer-document" contenteditable="false" data-md-range="0:8">
       <div role="heading" aria-level="2">Pano başlığı</div>
       <p>Bir <span style="font-weight:700">kalın</span>, <span style="font-style:italic">italik</span>, <s>silinen</s> ve <a href="https://example.com/wiki">bağlantı</a>.</p>
       <ul><li>Birinci madde</li><li>İkinci madde</li></ul>
@@ -154,13 +170,11 @@ test("Confluence benzeri HTML başlık, liste, tablo ve kod olarak yapışır",a
       <pre data-language="javascript"><code><span>const</span> x = 1;\n  console.log(x);</code></pre>
       <p><img src="https://example.com/image.png" alt="Şema"></p>
       <button>Copy code</button><span aria-hidden="true">Araç simgesi</span><script>window.pasteExecuted=true</script>
-      </div><!--EndFragment--></body></html>`);
-    data.items.add(new File([new Uint8Array([0])],"selection.png",{type:"image/png"}));
-    document.querySelector("#live-root .tiptap").dispatchEvent(new ClipboardEvent("paste",{bubbles:true,cancelable:true,clipboardData:data}));
-    window.__karacaTest.rich.flush();
+      </div><!--EndFragment--></body></html>`
   });
   const root=page.locator("#live-root");
-  assert.equal(await root.locator("h2").filter({hasText:"Pano başlığı"}).count(),1);
+  await root.locator("h2").filter({hasText:"Pano başlığı"}).waitFor();
+  await page.evaluate(() => window.__karacaTest.rich.flush());
   assert.equal(await root.locator("strong").filter({hasText:"kalın"}).count(),1);
   assert.equal(await root.locator("em").filter({hasText:"italik"}).count(),1);
   assert.equal(await root.locator('a[href="https://example.com/wiki"]').count(),1);
@@ -179,15 +193,9 @@ test("Confluence benzeri HTML başlık, liste, tablo ve kod olarak yapışır",a
 
 test("boş HTML varsa düz metne döner; yalnız görsel panosu görsel akışını kullanır",async()=>{
   await page.locator("#live-root .tiptap").click();
-  await page.evaluate(()=>{
-    const data=new DataTransfer();data.setData("text/plain","Kaybolmayan düz metin");data.setData("text/html","<meta charset=utf-8><span></span>");
-    document.querySelector("#live-root .tiptap").dispatchEvent(new ClipboardEvent("paste",{bubbles:true,cancelable:true,clipboardData:data}));
-  });
-  assert.match(await page.locator("#live-root").innerText(),/Kaybolmayan düz metin/);
-  await page.evaluate(()=>{
-    const data=new DataTransfer();data.items.add(new File([new Uint8Array([0])],"image.png",{type:"image/png"}));
-    document.querySelector("#live-root .tiptap").dispatchEvent(new ClipboardEvent("paste",{bubbles:true,cancelable:true,clipboardData:data}));
-  });
+  await pasteClipboard({text:"Kaybolmayan düz metin",html:"<meta charset=utf-8><span></span>"});
+  await page.waitForFunction(() => document.querySelector("#live-root").textContent.includes("Kaybolmayan düz metin"));
+  await pasteClipboard({image:true});
   await page.waitForFunction(()=>window.__posted.some(m=>m.type==="save-image"));
 });
 
@@ -440,6 +448,11 @@ test("görsel penceresi düğmenin altında açılır; dosya seç, iptal ve ekle
   const dialog = page.getByRole("dialog", { name: "Insert image", exact: true });
   for (const width of [1280, 390]) {
     await page.setViewportSize({ width, height: 900 });
+    await page.waitForFunction(() => {
+      const button = document.querySelector('[data-cmd="image"]').getBoundingClientRect();
+      const box = document.querySelector(".kdialog").getBoundingClientRect();
+      return Math.abs(box.y - (button.bottom + 6)) <= 1;
+    });
     const button = await anchor.boundingBox(), box = await dialog.boundingBox();
     assert.ok(Math.abs(box.y - (button.y + button.height + 6)) <= 1);
     assert.ok(box.x >= 8 && box.x + box.width <= width - 8);
