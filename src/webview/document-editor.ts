@@ -211,6 +211,9 @@ export class DocumentEditor {
         handleKeyDown: (_view,event) => tableKeyDown(this.editor,event),
         transformPastedHTML: normalizeClipboardHTML,
         clipboardTextSerializer: (slice) => {
+          if (slice.content.childCount === 1 && slice.content.firstChild?.type.spec.code) {
+            return slice.content.firstChild.textContent;
+          }
           const container = document.createElement("div");
           container.appendChild(DOMSerializer.fromSchema(this.editor.schema).serializeFragment(slice.content));
           return markdownWhitespace(converter.turndown(container));

@@ -614,6 +614,40 @@ test("sürekli kaydırma karşı tarafa her karede iletilir ve geri besleme üre
   assert.equal(await page.evaluate(()=>window.__posted.filter(m=>m.type==="scroll-sync").length),before);
 });
 
+test("kod seçimi düz metin, blok düğmeleri düz kod veya güvenli Markdown kopyalar", async () => {
+  const code = ".\\mvnw.cmd -s .mvn/settings.xml spring-boot:run\nWrite-Host \"a  b\"\n```";
+  const text = "# Kopyalama\n\n````powershell\n" + code + "\n````\n";
+  await page.evaluate(text => window.postMessage({proto:1,type:"update",text,version:2},"*"), text);
+  await page.locator("#live-root pre code", { hasText: "spring-boot:run" }).waitFor();
+  const copiedSelection = await page.evaluate(() => {
+    const { rich } = window.__karacaTest;
+    let start;
+    rich.editor.state.doc.descendants((node, pos) => {
+      if (node.type.name === "codeBlock") start = pos + 1;
+    });
+    const command = ".\\mvnw.cmd -s .mvn/settings.xml spring-boot:run";
+    rich.editor.commands.setTextSelection({ from: start, to: start + command.length });
+    return rich.editor.view.serializeForClipboard(rich.editor.state.selection.content()).text;
+  });
+  assert.equal(copiedSelection, code.split("\n")[0]);
+  for (const [mode, root] of [["live", "#live-root"], ["reading", "#reading-root"], ["split", "#split-root"]]) {
+    await page.locator("#btn-" + mode).click();
+    for (const [label, expected] of [
+      ["Kodu kopyala", code + "\n"],
+      ["Markdown kopyala", "````powershell\n" + code + "\n````"],
+    ]) {
+      await page.evaluate(() => { window.__posted.length = 0; });
+      await page.locator(root).getByRole("button", {name:label,exact:true}).click();
+      await page.waitForFunction(() => window.__posted.some(message => message.type === "write-clipboard-text"));
+      const message = await page.evaluate(() => window.__posted.find(message => message.type === "write-clipboard-text"));
+      assert.equal(message.text, expected);
+      await page.evaluate(nonce => window.postMessage({proto:1,type:"clipboard-write-result",nonce,success:true},"*"), message.nonce);
+      await page.getByRole("status").filter({hasText:"Kopyalandı"}).waitFor();
+    }
+  }
+  assert.equal(await page.evaluate(() => window.__karacaTest.sync.text), text);
+});
+
 test("iç içe listelerde Git çizgileri aynı sütunda ve ayardan kapanabilir", async () => {
   const base = "# Liste\n\n- Üst\n  - Çocuk\n  - Komşu\n- Sabit\n";
   const text = "# Liste\n\n- Üst değişti\n  - Çocuk\n  - Yeni\n  - Bir tane daha\n  - Komşu\n- Sabit\n";

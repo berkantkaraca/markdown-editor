@@ -33,6 +33,7 @@ body.vscode-dark, body.vscode-high-contrast {
   font-size: var(--vscode-editor-font-size, 13px); line-height: 1.5;
   tab-size: 4;
 }
+.md-body .code-block > pre.hljs { margin: 0; padding-top: 48px; }
 .md-body pre.hljs code { font: inherit; color: inherit; background: transparent; padding: 0; }
 .hljs-keyword, .hljs-literal, .hljs-name { color: var(--syntax-keyword); }
 .hljs-control { color: var(--syntax-control); }

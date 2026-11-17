@@ -21,7 +21,7 @@ test("web editor opens, edits, restores and exports Markdown with an embedded im
   await page.getByRole("link", { name: /Tarayıcıda düzenle/ }).click();
   await page.waitForURL("**/editor/");
   await page.locator("#live-root h1").waitFor();
-  assert.equal(await page.locator("#pkgmark").textContent(), "33");
+  assert.equal(await page.locator("#pkgmark").textContent(), "35");
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
 
   const picker = page.waitForEvent("filechooser");

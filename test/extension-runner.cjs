@@ -29,6 +29,15 @@ exports.run = async () => {
         await vscode.commands.executeCommand("vscode.openWith", vscode.Uri.file(other), "karaca.mdEditor", { preview: false });
       }
       if (command.type === "switch-back") await open();
+      if (command.type === "inspect-linked-file") {
+        const editor = vscode.window.activeTextEditor;
+        fs.writeFileSync(path.join(directory, "linked-file.json"), JSON.stringify({
+          path: editor?.document.uri.fsPath,
+          language: editor?.document.languageId,
+          text: editor?.document.getText(),
+        }));
+        await open();
+      }
       if (command.type === "open-diff") {
         await vscode.workspace.getConfiguration("workbench").update("diffEditorAssociations", {"*.md":"karaca.mdEditor"}, vscode.ConfigurationTarget.Global);
         const modified = vscode.Uri.file(file);

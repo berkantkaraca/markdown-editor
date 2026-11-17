@@ -544,6 +544,16 @@ class KaracaMarkdownProvider implements vscode.CustomTextEditorProvider {
           postConfig();
           break;
         }
+        case "write-clipboard-text": {
+          if (typeof msg.nonce !== "string" || msg.nonce.length > 100 || typeof msg.text !== "string") break;
+          let success = false;
+          try {
+            await vscode.env.clipboard.writeText(msg.text);
+            success = true;
+          } catch { /* Report the failure in the originating webview. */ }
+          void webviewPanel.webview.postMessage({ proto: PROTO, type: "clipboard-write-result", nonce: msg.nonce, success });
+          break;
+        }
         case "read-clipboard-text": {
           if (typeof msg.nonce !== "string" || msg.nonce.length > 100) break;
           try {
@@ -692,24 +702,24 @@ class KaracaMarkdownProvider implements vscode.CustomTextEditorProvider {
       }
       const baseDir = vscode.Uri.file(path.dirname(document.uri.fsPath));
       const target = vscode.Uri.file(path.resolve(baseDir.fsPath, decodeURIComponent(cleaned)));
+      const markdown = path.extname(target.fsPath).toLowerCase() === ".md";
       try {
         await vscode.workspace.fs.stat(target);
-        await vscode.commands.executeCommand("vscode.openWith", target, "karaca.mdEditor");
-      } catch {
+      } catch (error) {
+        if (!(error instanceof vscode.FileSystemError) || error.code !== "FileNotFound") throw error;
         // Dosya yoksa oluşturmayı teklif et
         const create = await vscode.window.showInformationMessage(
           `"${cleaned}" ${t("Dosya bulunamadı.")} ${t("Oluşturulsun mu?")}`,
           t("Oluştur"),
           t("Vazgeç")
         );
-        if (create === t("Oluştur")) {
-          await vscode.workspace.fs.createDirectory(
-            vscode.Uri.file(path.dirname(target.fsPath))
-          );
-          await vscode.workspace.fs.writeFile(target, Buffer.from(`# ${cleaned}\n`, "utf8"));
-          await vscode.commands.executeCommand("vscode.openWith", target, "karaca.mdEditor");
-        }
+        if (create !== t("Oluştur")) return;
+        await vscode.workspace.fs.createDirectory(
+          vscode.Uri.file(path.dirname(target.fsPath))
+        );
+        await vscode.workspace.fs.writeFile(target, Buffer.from(markdown ? `# ${cleaned}\n` : "", "utf8"));
       }
+      await vscode.commands.executeCommand("vscode.openWith", target, markdown ? "karaca.mdEditor" : "default");
     } catch (err: any) {
       vscode.window.showErrorMessage(`${t("Bağlantı açılamadı:")} ${err?.message ?? err}`);
     }

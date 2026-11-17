@@ -9,14 +9,20 @@ test("VS Code Extension Host: aç, düzenle, kaydet ve yeniden aç", { timeout: 
   const hostDirectory = path.join(root, "out/extension-host"); fs.mkdirSync(hostDirectory, { recursive: true });
   const directory = fs.mkdtempSync(path.join(hostDirectory, "git-"));
   const file = path.join(directory, "roundtrip.md");
-  const baseline = "# Extension Host\n\n[Hedefe git](#hedef)\n\nBaşlangıç paragrafı.\n\n" + "Kaydetme denemesi.\n\n".repeat(30) + "## Orta hedef\n\n" + "Kaydetme denemesi.\n\n".repeat(30) + "Silinecek.\n\n## Hedef\n\nSon.\n";
-  fs.writeFileSync(file, baseline);
+  const baseline = "# Extension Host\n\n[Hedefe git](#hedef)\n\n[ProductController](src/My%20Project/ProductController.java)\n\nBaşlangıç paragrafı.\n\n" + "Kaydetme denemesi.\n\n".repeat(30) + "## Orta hedef\n\n" + "Kaydetme denemesi.\n\n".repeat(30) + "Silinecek.\n\n## Hedef\n\nSon.\n";
+  const javaFile = path.join(directory, "src", "My Project", "ProductController.java");
+  const javaSource = "package dev.journey.catalog;\n\npublic class ProductController {\n    private final String name = \"catalog\";\n}\n";
+  fs.mkdirSync(path.dirname(javaFile), { recursive: true });
+  fs.writeFileSync(javaFile, javaSource);
+  const codeSample = ".\\mvnw.cmd -s .mvn/settings.xml spring-boot:run";
+  const codeBlock = "\n```powershell\n" + codeSample + "\n```\n";
+  fs.writeFileSync(file, baseline + codeBlock);
   const git = args => execFileSync("git", args, { cwd: directory, stdio: "pipe" });
   git(["init"]); git(["-c", "user.name=Karaca Test", "-c", "user.email=test@example.invalid", "add", "roundtrip.md"]);
   git(["-c", "user.name=Karaca Test", "-c", "user.email=test@example.invalid", "commit", "-m", "Git gutter baseline"]);
-  fs.writeFileSync(file, baseline.replace("Başlangıç paragrafı.", "HEAD paragrafı."));
+  fs.writeFileSync(file, baseline.replace("Başlangıç paragrafı.", "HEAD paragrafı.") + codeBlock);
   git(["-c", "user.name=Karaca Test", "-c", "user.email=test@example.invalid", "commit", "-am", "Different HEAD baseline"]);
-  fs.writeFileSync(file, baseline.replace("Başlangıç paragrafı.", "Değişen paragraf.").replace("Silinecek.\n\n", "") + "\nYeni paragraf.\n");
+  fs.writeFileSync(file, baseline.replace("Başlangıç paragrafı.", "Değişen paragraf.").replace("Silinecek.\n\n", "") + codeBlock + "\nYeni paragraf.\n");
   const candidates = [process.env.VSCODE_EXECUTABLE,
     path.join(process.env.LOCALAPPDATA || "", "Programs/Microsoft VS Code/Code.exe"),
     "/Applications/Visual Studio Code.app/Contents/MacOS/Electron", "/usr/share/code/code"].filter(Boolean);
@@ -42,8 +48,20 @@ test("VS Code Extension Host: aç, düzenle, kaydet ve yeniden aç", { timeout: 
     assert.ok(fs.existsSync(path.join(channel, "ready")), "Extension Host test runner başlatılmalı");
     let frame = await editorFrame();
     await frame.locator("#live-root h1").waitFor();
-    assert.equal(await frame.locator("#pkgmark").innerText(), "33");
+    assert.equal(await frame.locator("#pkgmark").innerText(), "35");
     await frame.getByRole("button", { name: "Table", exact: true }).waitFor();
+    await frame.getByRole("link", { name: "ProductController", exact: true }).click();
+    await window.waitForFunction(() => Array.from(document.querySelectorAll(".tab.active")).some(tab => tab.textContent.includes("ProductController.java")));
+    fs.writeFileSync(path.join(channel, "command.json"), JSON.stringify({ type: "inspect-linked-file" }));
+    for (let attempt = 0; attempt < 100 && !fs.existsSync(path.join(channel, "linked-file.json")); attempt++) await window.waitForTimeout(50);
+    const linked = JSON.parse(fs.readFileSync(path.join(channel, "linked-file.json"), "utf8"));
+    assert.equal(process.platform === "win32" ? linked.path.toLowerCase() : linked.path,
+      process.platform === "win32" ? javaFile.toLowerCase() : javaFile);
+    assert.equal(linked.language, "java");
+    assert.equal(linked.text, javaSource);
+    assert.equal(fs.readFileSync(javaFile, "utf8"), javaSource);
+    frame = await editorFrame();
+    await frame.locator("#live-root h1").waitFor();
     await frame.locator("#live-root .git-modified").first().waitFor();
     await frame.locator("#live-root .git-added").first().waitFor();
     assert.ok(await frame.locator("#live-root .git-deleted-point").count());
@@ -107,8 +125,31 @@ test("VS Code Extension Host: aç, düzenle, kaydet ve yeniden aç", { timeout: 
     await frame.locator("#editor-settings summary").click();
     await app.evaluate(({clipboard})=>{
       globalThis.karacaSavedClipboard={text:clipboard.readText(),html:clipboard.readHTML(),rtf:clipboard.readRTF(),image:clipboard.readImage()};
-      clipboard.writeText("Düz pano denemesi");
     });
+    await frame.getByRole("button", { name: "Kodu kopyala", exact: true }).click();
+    await frame.getByRole("status").filter({hasText:"Kopyalandı"}).waitFor();
+    assert.equal((await app.evaluate(({clipboard}) => clipboard.readText())).trimEnd(), codeSample);
+    await frame.getByRole("button", { name: "Markdown kopyala", exact: true }).click();
+    for (let attempt = 0; attempt < 50; attempt++) {
+      if ((await app.evaluate(({clipboard}) => clipboard.readText())).startsWith("```powershell")) break;
+      await window.waitForTimeout(50);
+    }
+    assert.equal(await app.evaluate(({clipboard}) => clipboard.readText()), codeBlock.trim());
+    await frame.locator("#live-root pre code").click();
+    await frame.locator("#live-root pre code").evaluate(code => {
+      const range = document.createRange();
+      range.selectNodeContents(code);
+      const selection = window.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(range);
+    });
+    await window.keyboard.press("Control+c");
+    for (let attempt = 0; attempt < 50; attempt++) {
+      if ((await app.evaluate(({clipboard}) => clipboard.readText())).trimEnd() === codeSample) break;
+      await window.waitForTimeout(50);
+    }
+    assert.equal((await app.evaluate(({clipboard}) => clipboard.readText())).trimEnd(), codeSample);
+    await app.evaluate(({clipboard}) => clipboard.writeText("Düz pano denemesi"));
     await frame.locator("#live-root .tiptap").click(); await window.keyboard.press("Control+End");
     await window.keyboard.press("Enter"); await window.keyboard.press("Control+v");
     await frame.waitForFunction(()=>document.querySelector("#live-root").textContent.includes("Düz pano denemesi"),{},{timeout:5000});
@@ -141,7 +182,7 @@ test("VS Code Extension Host: aç, düzenle, kaydet ve yeniden aç", { timeout: 
     assert.match(fs.readFileSync(file,"utf8"),/## Pano başlığı/);
     assert.match(fs.readFileSync(file,"utf8"),/\*\*kalın\*\*/);
     assert.equal(await frame.locator("#live-root td").filter({hasText:"Pano hücresi"}).count(),1);
-    await window.screenshot({ path: path.join(directory, "roundtrip-paket-33.png") });
+    await window.screenshot({ path: path.join(directory, "roundtrip-paket-35.png") });
     const original = path.join(directory, "selected-original.png");
     const png = await frame.evaluate(() => {
       const canvas = document.createElement("canvas");

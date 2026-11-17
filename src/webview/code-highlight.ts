@@ -3,6 +3,7 @@ import type { Node as DocumentNode } from "@tiptap/pm/model";
 import { Plugin } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import { highlightCode } from "../shared/code-highlight";
+import { codeBlockView } from "./code-copy";
 
 type TokenRange = { from: number; to: number; className: string };
 const tokens = new WeakMap<DocumentNode, TokenRange[]>();
@@ -40,6 +41,6 @@ export const CodeHighlight = Extension.create({
   name: "codeHighlight",
   addProseMirrorPlugins: () => [new Plugin({
     state: { init: (_config, state) => highlight(state.doc), apply: (tr, value) => tr.docChanged ? highlight(tr.doc) : value },
-    props: { decorations(state) { return this.getState(state); } },
+    props: { nodeViews: { codeBlock: codeBlockView }, decorations(state) { return this.getState(state); } },
   })],
 });

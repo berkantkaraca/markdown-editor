@@ -1,4 +1,4 @@
-# Durum — paket-33
+# Durum — paket-35
 
 - [x] Tam satır/sütun seçiminde Delete/Backspace ile kaldırma; gruplu modern Tablo menüsü, hücre üzerinde hızlı işlemler ve Alt+Shift+ok kısayolları.
 

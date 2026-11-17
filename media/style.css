@@ -181,6 +181,13 @@ body {
 .md-body code { background: var(--md-code-bg); border-radius: 4px; padding: 1px 5px; font-size: .9em; font-family: var(--vscode-editor-font-family, monospace); }
 .md-body pre { background: var(--md-code-bg); border: 1px solid var(--md-border); border-radius: 8px; padding: 12px 14px; overflow-x: auto; }
 .md-body pre code { background: none; padding: 0; }
+.md-body .code-block { position: relative; margin: 22px 0; }
+.md-body .code-block > pre { margin: 0; padding-top: 48px; }
+.code-copy-actions { position: absolute; z-index: 2; top: 7px; right: 7px; display: flex; gap: 6px; max-width: calc(100% - 14px); user-select: none; }
+.code-copy-actions button { min-height: 30px; padding: 4px 8px; border: 1px solid var(--md-border); border-radius: 5px; background: var(--vscode-editorWidget-background, #252526); color: var(--vscode-editor-foreground, #d4d4d4); font: 12px var(--vscode-font-family, sans-serif); cursor: pointer; }
+.code-copy-actions button:hover { background: var(--vscode-list-hoverBackground, var(--md-hover)); }
+.code-copy-actions button:focus-visible { outline: 2px solid var(--vscode-focusBorder, var(--md-accent)); outline-offset: 2px; }
+.code-copy-feedback:not(:empty) { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 90; max-width: calc(100vw - 32px); padding: 8px 14px; border: 1px solid var(--md-border); border-radius: 6px; background: var(--vscode-editorWidget-background, #252526); color: var(--vscode-editor-foreground, #d4d4d4); }
 .md-body blockquote { border-left: 3px solid var(--md-accent); margin: .8em 0; padding: 2px 12px; opacity: .9; }
 .md-body table { border-collapse: collapse; margin: .8em 0; width: 100%; }
 .md-body th, .md-body td { border: 1px solid var(--md-border); padding: 6px 10px; }

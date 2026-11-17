@@ -15,6 +15,7 @@ import { parseFrontmatter, parseHeadings } from "../shared/md-utils";
 import { decorateGitPreview } from "./git-markers";
 import { editorDefaults, editorModes, isEditorMode as validMode, parseEditorPreference, type EditorMode as Mode, type EditorPreferences } from "../shared/editor-preferences";
 import { attachImagePreview } from "./image-preview";
+import { attachCodeCopy } from "./code-copy";
 import { scrollKey, captureScroll, applyScroll, cancelScroll, type ScrollSurface, type ScrollPosition } from "./comparison-scroll";
 
 type ViewState = { mode?: string; recoveryDraft?: string; draft?: LocalDraft; scrollOffsets?: Record<string, number> };
@@ -40,11 +41,23 @@ let plainPasteSequence = 0;
 const imagePickers = new Map<string, (file: string) => void>();
 const liveRoot = $("live-root"), readingRoot = $("reading-root"), splitRoot = $("split-root");
 const imagePreview = attachImagePreview([liveRoot, readingRoot, splitRoot]);
+let clipboardSequence = 0;
+const clipboardWrites = new Map<string, { resolve: () => void; reject: () => void; timer: ReturnType<typeof setTimeout> }>();
+const codeCopy = attachCodeCopy([liveRoot, readingRoot, splitRoot], text => {
+  if (browserHost) return navigator.clipboard.writeText(text);
+  return new Promise<void>((resolve, reject) => {
+    const nonce = `copy-${++clipboardSequence}`;
+    const timer = setTimeout(() => { clipboardWrites.delete(nonce); reject(); }, 10000);
+    clipboardWrites.set(nonce, { resolve, reject, timer });
+    post({ type: "write-clipboard-text", nonce, text });
+  });
+});
 function updateLanguage(language: unknown): void {
   setLanguage(language);
   document.documentElement.lang = language === "tr" ? "tr" : "en";
   for (const id of ["formatbar", "findbar", "back-to-live", "sync-retry"]) localizeChrome($(id));
   imagePreview.localize();
+  codeCopy.localize();
   for (const node of liveRoot.querySelectorAll<HTMLElement>(".preserved-content")) node.title = t("Düzenlemek için çift tıklayın");
   $("sync-message").textContent = syncState === "blocked" ? t("Kayıt tamamlanamadı. Taslağınız korundu.") : t("Kaydı yeniden deniyoruz…");
 }
@@ -274,6 +287,7 @@ readingRoot.addEventListener("dblclick", event => {
 });
 
 function resolveImages(root: HTMLElement): void {
+  codeCopy.refresh(root);
   const missing = new Set<string>();
   root.querySelectorAll<HTMLImageElement>("img").forEach((image) => {
     imagePreview.mark(image);
@@ -493,7 +507,14 @@ function receiveMessage(message: any): void {
   if (!message || (message.proto !== undefined && message.proto !== PROTO)) return;
   if (["update", "edit-result", "save-result", "git-baseline"].includes(message.type) && rich.composing) { compositionMessages.push(message); return; }
   if (typeof message.session === "string" && message.session !== sync.session) return;
-  if (message.type === "clipboard-text" && pendingPlainPastes.delete(message.nonce)) {
+  if (message.type === "clipboard-write-result") {
+    const pending = clipboardWrites.get(message.nonce);
+    if (!pending) return;
+    clipboardWrites.delete(message.nonce);
+    clearTimeout(pending.timer);
+    if (message.success === true) pending.resolve();
+    else pending.reject();
+  } else if (message.type === "clipboard-text" && pendingPlainPastes.delete(message.nonce)) {
     rich.pastePlainText(message.nonce,mode === "live" && typeof message.text === "string" ? message.text : "");
   } else if (message.type === "scroll-sync" && message.position) {
     receiveScroll(message.position);

@@ -29,6 +29,7 @@ visible `assets/` folder as `img-<timestamp>`. On save, unused generated images
 are removed after checking other Markdown files in the workspace (or document folder).
 Undo restores removed images from a local recovery copy outside the project.
 Click an image in Live, Reading or the Split preview to enlarge it. Use the mouse wheel or **+ / −** to zoom, drag to pan, and click the percentage to fit the image again. Press **Esc** to close the preview.
+Code blocks offer **Copy code** for plain text and **Copy Markdown** for the complete fenced block. Copying a selection inside a code block copies only the selected code.
 
 Git changes are marked against the last commit: green for added content, blue
 for modified content and red for deletions. Unsaved edits are included. Source
@@ -76,4 +77,4 @@ npm run compile
 npm test
 ```
 
-Press **F5** in VS Code to try the extension. The current build is **paket-33**.
+Press **F5** in VS Code to try the extension. The current build is **paket-35**.
